@@ -122,6 +122,46 @@ enum AnmBoneChannel {
 // so unterscheidet die Datei Euler- von Quaternion-Rotation.
 AnmBoneChannel BoneChannelOf(uint16_t curveIndex, uint16_t curveFormat);
 
+// ------------------------------------------------------------
+//  Kanaele eines MATERIAL-Eintrags
+//
+//  Andere Bedeutung als bei Bones: hier zaehlt der curveIndex
+//  eine feste Liste ab. Die Zuordnung stammt aus
+//  create_material_curves in anm.py.
+//
+//  In den Testdaten sind fast alle Kurven einwertig, also
+//  konstant. Wirklich animiert sind der Offset der ersten
+//  UV-Ebene (U0/V0) und die Deckkraft - klassisches UV-Scrollen
+//  fuer Augen, Haare und Effektflaechen.
+// ------------------------------------------------------------
+enum AnmMaterialChannel {
+    kMatUnknown = -1,
+    kMatU0Offset = 0,
+    kMatV0Offset = 1,
+    kMatU1Offset = 2,
+    kMatV1Offset = 3,
+    kMatU2Offset = 4,
+    kMatV2Offset = 5,
+    kMatU3Offset = 6,
+    kMatV3Offset = 7,
+    kMatU0Scale  = 8,
+    kMatV0Scale  = 9,
+    kMatU1Scale  = 10,
+    kMatV1Scale  = 11,
+    kMatBlendRate1 = 12,
+    kMatBlendRate2 = 13,
+    kMatFalloff  = 14,
+    kMatGlare    = 15,
+    kMatAlpha    = 16,
+    kMatOutlineId = 17,
+    kMatU2Scale  = 18,
+    kMatV2Scale  = 19,
+    kMatU3Scale  = 20,
+    kMatV3Scale  = 21,
+};
+
+AnmMaterialChannel MaterialChannelOf(uint16_t curveIndex);
+
 struct AnmEntry {
     int16_t  clumpIndex  = 0;        // -1 = Kamera / Licht / Ambient
     uint16_t boneIndex   = 0;

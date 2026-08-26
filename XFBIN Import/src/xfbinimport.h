@@ -44,6 +44,8 @@
 //
 //  Stufe 5 - Animationen:
 //    XfbinCpp.parseAnims()                    -> int   Keyframes, -1 = Fehler
+//    XfbinCpp.parseAnimsAppend()              -> int   anhaengen statt ersetzen
+//    XfbinCpp.clearAnims()                    -> int   geladene Animationen verwerfen
 //    XfbinCpp.animCount()                     -> int
 //    XfbinCpp.animName    <index>             -> string  (0-basiert)
 //    XfbinCpp.animSummary()                   -> string
@@ -61,6 +63,11 @@
 //        Ruhelage-Keys an beiden Enden fuer alles, was diese
 //        Animation nicht anfasst. Macht eine Sequenz in sich
 //        abgeschlossen.
+//    XfbinCpp.buildMaterialAnim <index> <start> <end> -> int
+//        UV-Offset, Kachelung und Deckkraft der Materialien.
+//    XfbinCpp.buildVisibility <index> <start> <end> -> int
+//        Sichtbarkeit der Objekte aus der Deckkraft-Kurve. Was
+//        eine Animation gar nicht anspricht, wird ausgeblendet.
 //    XfbinCpp.sceneRootName()                 -> string Name des Wurzel-Bones
 //
 //  Instanzen - ein Charakter kann dasselbe Modell mehrfach
@@ -70,6 +77,13 @@
 //    XfbinCpp.requiredInstances <clumpName>   -> int
 //    XfbinCpp.buildSkeletonN <mode> <scale> <copies>          -> int
 //    XfbinCpp.buildMeshesN <skipLod> <normals> <skin> <scale> <copies> -> int
+//        copies = 0 laesst das Plugin je Clump selbst nachsehen,
+//        wie viele Exemplare die Animationen erwarten. Das ist der
+//        Normalfall - eine Datei kann Skelette mit ganz
+//        unterschiedlichem Bedarf enthalten.
+//    XfbinCpp.setBoneSize <groesse>           -> int
+//        Breite und Hoehe der Bone-Objekte beim Anlegen.
+//        0 = blosse Linien, negativ = Max' Standardwert.
 //    XfbinCpp.setQuatMode <0|1>               -> int
 //        0 = Rotation direkt uebernehmen (Standard), 1 = konjugieren
 //        wirkt auf Quaternion- UND Euler-Kurven
@@ -129,6 +143,7 @@
 
 #include <array>
 #include <memory>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -142,7 +157,7 @@
 #define XFBINIMPORT_CLASS_ID     Class_ID(0x2C614F13, 0x5A0D7B22)
 #define XFBINIMPORT_INTERFACE_ID Interface_ID(0x2C614F13, 0x5A0D7B23)
 
-#define XFBINIMPORT_VERSION_STR  _T("1.4.0")
+#define XFBINIMPORT_VERSION_STR  _T("1.9.2")
 
 // ============================================================
 //  Function IDs
@@ -181,6 +196,8 @@ enum XfbinImportFnID {
     fn_buildMeshesSkinned,
     // --- Stufe 5 ---
     fn_parseAnims,
+    fn_parseAnimsAppend,
+    fn_clearAnims,
     fn_animCount,
     fn_animName,
     fn_animSummary,
@@ -191,16 +208,20 @@ enum XfbinImportFnID {
     fn_animFrames,
     fn_buildBindPoseKey,
     fn_buildIdleKeys,
+    fn_buildVisibility,
     fn_sceneRootName,
     fn_fileClumpName,
     fn_requiredInstances,
     fn_buildSkeletonN,
     fn_buildMeshesN,
     fn_setQuatMode,
+    fn_setBoneSize,
     fn_sceneBoneCount,
     fn_sceneClumpName,
     fn_clearScene,
     fn_sceneReport,
+    fn_layerReport,
+    fn_buildMaterialAnim,
     // --- Stufe 4 ---
     fn_parseTextures,
     fn_textureCount,
@@ -288,6 +309,8 @@ public:
         FN_4(fn_buildMeshesSkinned, TYPE_INT, BuildMeshesSkinned,
              TYPE_INT, TYPE_INT, TYPE_INT, TYPE_FLOAT)
         FN_0(fn_parseAnims,   TYPE_INT,    ParseAnims)
+        FN_0(fn_parseAnimsAppend, TYPE_INT, ParseAnimsAppend)
+        FN_0(fn_clearAnims,   TYPE_INT,    ClearAnims)
         FN_0(fn_animCount,    TYPE_INT,    AnimCount)
         FN_1(fn_animName,     TYPE_STRING, GetAnimName,   TYPE_INT)
         FN_0(fn_animSummary,  TYPE_STRING, GetAnimSummary)
@@ -300,6 +323,8 @@ public:
         FN_1(fn_buildBindPoseKey, TYPE_INT, BuildBindPoseKey, TYPE_FLOAT)
         FN_3(fn_buildIdleKeys, TYPE_INT, BuildIdleKeys,
              TYPE_INT, TYPE_FLOAT, TYPE_FLOAT)
+        FN_3(fn_buildVisibility, TYPE_INT, BuildVisibility,
+             TYPE_INT, TYPE_FLOAT, TYPE_FLOAT)
         FN_0(fn_sceneRootName, TYPE_STRING, GetSceneRootName)
         FN_0(fn_fileClumpName, TYPE_STRING, GetFileClumpName)
         FN_1(fn_requiredInstances, TYPE_INT, RequiredInstances, TYPE_STRING)
@@ -308,10 +333,14 @@ public:
         FN_5(fn_buildMeshesN, TYPE_INT, BuildMeshesN,
              TYPE_INT, TYPE_INT, TYPE_INT, TYPE_FLOAT, TYPE_INT)
         FN_1(fn_setQuatMode,  TYPE_INT,    SetQuatMode,   TYPE_INT)
+        FN_1(fn_setBoneSize,  TYPE_INT,    SetBoneSize,   TYPE_FLOAT)
         FN_0(fn_sceneBoneCount, TYPE_INT,    SceneBoneCount)
         FN_0(fn_sceneClumpName, TYPE_STRING, GetSceneClumpName)
         FN_0(fn_clearScene,     TYPE_INT,    ClearScene)
         FN_0(fn_sceneReport,    TYPE_STRING, GetSceneReport)
+        FN_0(fn_layerReport,    TYPE_STRING, GetLayerReport)
+        FN_3(fn_buildMaterialAnim, TYPE_INT, BuildMaterialAnim,
+             TYPE_INT, TYPE_FLOAT, TYPE_FLOAT)
         FN_0(fn_parseTextures,   TYPE_INT,    ParseTextures)
         FN_0(fn_textureCount,    TYPE_INT,    TextureCount)
         FN_0(fn_materialCount,   TYPE_INT,    MaterialCount)
@@ -355,6 +384,8 @@ public:
                            float scale);
 
     int ParseAnims();
+    int ParseAnimsAppend();
+    int ClearAnims();
     int AnimCount();
     const MCHAR* GetAnimName(int index);
     const MCHAR* GetAnimSummary();
@@ -365,19 +396,31 @@ public:
     float AnimFrames(int index);
     int BuildBindPoseKey(float frame);
     int BuildIdleKeys(int index, float startFrame, float endFrame);
+    int BuildVisibility(int index, float startFrame, float endFrame);
     const MCHAR* GetSceneRootName();
 
     const MCHAR* GetFileClumpName();
     int RequiredInstances(const MCHAR* clumpName);
+
+    // Rohfassung auf dem cp932-Namen. buildSkeletonN bestimmt die
+    // Zahl damit je Clump selbst, statt sie von aussen zu bekommen.
+    int RequiredInstancesRaw(const std::string& clumpName);
     int BuildSkeletonN(int mode, float scale, int copies);
     int BuildMeshesN(int skipLod, int explicitNormals, int applySkin,
                      float scale, int copies);
     int SetQuatMode(int mode);
+    int SetBoneSize(float size);
 
     int SceneBoneCount();
     const MCHAR* GetSceneClumpName();
     int ClearScene();
     const MCHAR* GetSceneReport();
+
+    // Zuordnung Knoten -> Clump als Text, fuer den Layerbau in
+    // MaxScript. Eine Zeile je Knoten:
+    //   <clump> TAB <instanz> TAB bone|mesh TAB <handle>
+    const MCHAR* GetLayerReport();
+    int BuildMaterialAnim(int index, float startFrame, float endFrame);
 
     int ParseTextures();
     int TextureCount();
@@ -440,10 +483,32 @@ private:
     struct MeshRef { ULONG handle = 0; size_t modelIndex = 0; };
     std::vector<MeshRef> meshNodes_;
 
+    // Alle jemals angelegten Mesh-Objekte, ueber Dateigrenzen
+    // hinweg - mit dem Clump und dem Mesh-Bone, zu dem sie
+    // gehoeren. meshNodes_ wird bei jedem buildMeshes geleert
+    // und kennt nur die zuletzt geladene Datei; fuer die
+    // Sichtbarkeit braucht es den ganzen Bestand.
+    struct SceneMesh {
+        ULONG              handle = 0;
+        xfbin::RawString   clumpName;
+        xfbin::RawString   boneName;
+        int                instance = 0;
+    };
+    std::vector<SceneMesh> sceneMeshes_;
+
+    // XFBIN-Materialname -> das daraus gebaute Max-Material.
+    // Ueberlebt den Dateiwechsel, damit die Material-Animationen
+    // ihre Ziele wiederfinden.
+    std::map<std::string, Mtl*> sceneMaterials_;
+
     // 1 = Quaternionmatrix transponiert aufbauen. Notausgang,
     // falls sich die Herleitung in MakeRotationFromQuat an echten
     // Daten nicht bestaetigt.
     int quatMode_ = 0;
+
+    // Breite und Hoehe der Bone-Objekte, beim Anlegen gesetzt.
+    // Negativ = Max' Standardwert stehen lassen.
+    float boneSize_ = 0.0f;
 
     // --- Diagnose ---
     std::wstring lastError_;

@@ -312,6 +312,11 @@ AnmBoneChannel BoneChannelOf(uint16_t curveIndex, uint16_t curveFormat) {
     }
 }
 
+AnmMaterialChannel MaterialChannelOf(uint16_t curveIndex) {
+    if (curveIndex <= 21) return static_cast<AnmMaterialChannel>(curveIndex);
+    return kMatUnknown;
+}
+
 size_t Anm::KeyframeCount() const {
     size_t n = 0;
     for (const AnmEntry& e : entries)

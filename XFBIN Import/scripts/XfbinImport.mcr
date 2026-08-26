@@ -1,6 +1,6 @@
 -- ============================================================
 --  XfbinImport.mcr - user interface for the XFBIN Import plugin
---  Version 1.5.2
+--  Version 1.9.2
 --
 --  Three steps:
 --    1. pick the FOLDER holding the .xfbin files
@@ -31,7 +31,6 @@ macroScript XfbinImport_Open
   buttonText:"XFBIN Import"
   toolTip:"XFBIN Import - model and animations"
 (
-
   fn GetPluginVersion =
   (
     local sResult = undefined
@@ -80,6 +79,9 @@ macroScript XfbinImport_Open
       checkBox chkMedit    "Fill Material Editor" checked:true \
                align:#right offset:[4,4]
 
+      checkBox chkLayers "Sort into layers (per model, meshes and bones apart)" \
+               checked:true align:#left offset:[-4,4]
+
       button btnImport "Import" width:200 height:26 align:#center \
              offset:[0,4] enabled:false
     )
@@ -95,6 +97,8 @@ macroScript XfbinImport_Open
       checkBox chkNotes "Create note track" checked:true \
                align:#left across:4 offset:[-4,4]
       checkBox chkIdle "Rest keys" checked:true align:#left offset:[-46,4]
+      checkBox chkVis  "Visibility" checked:true align:#left offset:[-88,4]
+      checkBox chkMatAnim "Material anim" checked:true align:#left offset:[-130,4]
       spinner spnGap "Gap: " range:[0, 500, 10] type:#integer \
               fieldWidth:44 align:#center offset:[42,6]
       button btnSequence "Load all as sequence" width:140 height:23 \
@@ -217,6 +221,110 @@ macroScript XfbinImport_Open
 
       iCount
     ) -- end of ResizeBones
+
+    -- Sort everything into layers: one for the meshes of a
+    -- model, one for its bones.
+    --
+    -- The plugin knows which node belongs to which skeleton and
+    -- hands that over as text - one line per node with clump,
+    -- instance, kind and handle. Building the layers themselves
+    -- is left to MaxScript, where a layer is two named calls;
+    -- in C++ it would be ILayerManager and ILayerProperties.
+    fn SortIntoLayers =
+    (
+      local sReport = XfbinCpp.layerReport()
+      if (sReport == "") then (return 0)
+
+      local aLines = filterString sReport "\n" splitEmptyTokens:false
+      local iMoved = 0
+
+      -- No "continue" here: MAXScript does not have it. Nested
+      -- ifs instead - longer, but it runs.
+      for sLine in aLines do
+      (
+        local aPart = filterString sLine "\t" splitEmptyTokens:true
+
+        if (aPart.count >= 4) then
+        (
+          local sClump  = aPart[1]
+          local iInst   = aPart[2] as integer
+          local sKind   = aPart[3]
+          local iHandle = aPart[4] as integer
+
+          local n = maxOps.getNodeByHandle iHandle
+
+          if (n != undefined) then
+          (
+            -- "2peabod1 Bones", and " #2" from the second
+            -- instance on
+            local sName = sClump
+            if (iInst > 0) then
+            (
+              sName += " #" + ((iInst + 1) as string)
+            ) -- end of instance check
+
+            if (sKind == "bone") then
+            (
+              sName += " Bones"
+            )
+            else
+            (
+              sName += " Meshes"
+            ) -- end of kind check
+
+            local lyr = LayerManager.getLayerFromName sName
+            if (lyr == undefined) then
+            (
+              lyr = LayerManager.newLayerFromName sName
+            ) -- end of layer check
+
+            if (lyr != undefined) then
+            (
+              lyr.addNode n
+              iMoved += 1
+            ) -- end of add check
+          ) -- end of node check
+        ) -- end of part check
+      ) -- end of line loop
+
+      iMoved
+    ) -- end of SortIntoLayers
+
+    -- Safety net for the visibility tangents.
+    --
+    -- Since 1.9.2 the plugin writes them as step keys itself,
+    -- through IKeyControl. This pass costs one walk over the
+    -- scene and makes sure nothing slipped through - for
+    -- instance keys that some other tool added in between.
+    fn StepVisibilityKeys =
+    (
+      local iKeys = 0
+
+      for o in objects do
+      (
+        local vc = try (o.visibility.controller) catch undefined
+
+        if (vc != undefined) then
+        (
+          try
+          (
+            for k in vc.keys do
+            (
+              k.inTangentType  = #step
+              k.outTangentType = #step
+              iKeys += 1
+            ) -- end of key loop
+          )
+          catch
+          (
+            -- controller without keys, or one that has no
+            -- tangent types - nothing to do
+          ) -- end of try/catch
+        ) -- end of controller check
+      ) -- end of object loop
+
+      iKeys
+    ) -- end of StepVisibilityKeys
 
     -- Two note keys per sequence, at its start and its end. Same
     -- shape as the Animation Merge tool uses, so an exporter that
@@ -355,6 +463,7 @@ macroScript XfbinImport_Open
       else
       (
         lblPlugin.text = "Plugin " + sVer
+
         RefreshScene()
       ) -- end of plugin check
     ) -- end of open handler
@@ -411,47 +520,44 @@ macroScript XfbinImport_Open
       local iNormals = if chkNormals.checked then 1 else 0
       local iSkin    = if chkSkin.checked    then 1 else 0
 
+      -- Die Bone-Groesse geht ans Plugin, bevor etwas angelegt
+      -- wird: dort wird sie beim Erzeugen des Bone-Objekts
+      -- gesetzt. Der frueher noetige Nachlauf entfaellt damit -
+      -- und mit ihm die Moeglichkeit, ihn zu vergessen.
+      XfbinCpp.setBoneSize spnBoneSize.value
+
       local iBones  = 0
       local iMeshes = 0
       local iTex    = 0
 
       -- ------------------------------------------------------
-      --  How many copies of each model?
+      --  Animations first, then models.
       --
-      --  The animation file decides. A character can carry the
-      --  same weapon twice: the container then names its clump
-      --  twice, with different positions. So the animations are
-      --  read FIRST, then every model file is asked how many
-      --  instances of ITS clump they expect.
+      --  The animation files decide how many copies of each
+      --  skeleton are needed - a character can carry the same
+      --  weapon twice, or summon three of the same creature. So
+      --  they are read first; the plugin then works out the
+      --  count per clump on its own.
+      --
+      --  ALL animation files are loaded, not just one. Pein
+      --  brings four of them, together 104 animations, and they
+      --  address seventeen different skeletons between them.
       -- ------------------------------------------------------
-      local sAnimFile = if (aAnimFiles.count > 0) then aAnimFiles[1] else undefined
-      local aCopies = #()
+      local iAnims = 0
+      XfbinCpp.clearAnims()
 
-      for f in aModelFiles do (append aCopies 1)
-
-      if (sAnimFile != undefined) then
+      for f in aAnimFiles do
       (
-        local aClumpNames = #()
+        lblStatus.text = "Reading " + (filenameFromPath f) + " ..."
+        windows.processPostedMessages()
 
-        for f in aModelFiles do
+        if ((XfbinCpp.open f) > 0) then
         (
-          XfbinCpp.open f
-          append aClumpNames (XfbinCpp.fileClumpName())
-        ) -- end of name loop
+          XfbinCpp.parseAnimsAppend()
+        ) -- end of open check
+      ) -- end of animation file loop
 
-        XfbinCpp.open sAnimFile
-        XfbinCpp.parseAnims()
-
-        for i = 1 to aModelFiles.count do
-        (
-          aCopies[i] = XfbinCpp.requiredInstances aClumpNames[i]
-          if (aCopies[i] > 1) then
-          (
-            format "[XFBIN] '%' is used % times - building % copies.\n" \
-                   aClumpNames[i] aCopies[i] aCopies[i]
-          ) -- end of multi check
-        ) -- end of copies loop
-      ) -- end of anim file check
+      iAnims = XfbinCpp.animCount()
 
       for i = 1 to aModelFiles.count do
       (
@@ -462,16 +568,16 @@ macroScript XfbinImport_Open
 
         if ((XfbinCpp.open f) > 0) then
         (
-          local iB = XfbinCpp.buildSkeletonN iMode fScale aCopies[i]
-          local iM = XfbinCpp.buildMeshesN iSkipLod iNormals iSkin fScale aCopies[i]
+          -- 0 = let the plugin decide per clump how many
+          -- instances the animations expect.
+          local iB = XfbinCpp.buildSkeletonN iMode fScale 0
+          local iM = XfbinCpp.buildMeshesN iSkipLod iNormals iSkin fScale 0
 
           iBones  += iB
           iMeshes += iM
 
-          format "[XFBIN] % : % bone(s), % object(s)%\n" \
-                 (filenameFromPath f) iB iM \
-                 (if aCopies[i] > 1 then \
-                    ("  (" + (aCopies[i] as string) + " instances)") else "")
+          format "[XFBIN] % : % bone(s), % object(s)\n" \
+                 (filenameFromPath f) iB iM
 
           if (chkTextures.checked) then
           (
@@ -485,37 +591,15 @@ macroScript XfbinImport_Open
         ) -- end of open check
       ) -- end of model loop
 
-      -- Bone objects only; point helpers have no width or height.
-      if (ddlMode.selection == 2) then
-      (
-        ResizeBones spnBoneSize.value
-      ) -- end of bone mode check
+      FillAnimList()
 
       RefreshScene()
 
-      -- The animation file stays open so the animation controls
-      -- work right away. The skeleton survives the file switch -
-      -- it lives in the scene, not in the file.
-      local iAnims = 0
-      if (aAnimFiles.count > 0) then
+      local iLayers = 0
+      if (chkLayers.checked and iMeshes > 0) then
       (
-        lblStatus.text = "Loading " + (filenameFromPath aAnimFiles[1]) + " ..."
-        windows.processPostedMessages()
-
-        if ((XfbinCpp.open aAnimFiles[1]) > 0) then
-        (
-          XfbinCpp.parseAnims()
-          FillAnimList()
-          iAnims = XfbinCpp.animCount()
-          ShowWarnings()
-        ) -- end of open check
-
-        if (aAnimFiles.count > 1) then
-        (
-          format "[XFBIN] % more animation file(s) in the folder - loaded %.\n" \
-                 (aAnimFiles.count - 1) (filenameFromPath aAnimFiles[1])
-        ) -- end of multi check
-      ) -- end of anim check
+        iLayers = SortIntoLayers()
+      ) -- end of layer check
 
       local iSlots = 0
       if (chkMedit.checked and iMeshes > 0) then
@@ -527,7 +611,8 @@ macroScript XfbinImport_Open
                        (iMeshes as string) + " objects, " + \
                        (iTex as string) + " textures, " + \
                        (iAnims as string) + " animations, " + \
-                       (iSlots as string) + " editor slots."
+                       (iSlots as string) + " editor slots, " + \
+                       (iLayers as string) + " nodes in layers."
       lblTime.text   = XfbinCpp.timings()
     ) -- end of btnImport pressed
 
@@ -546,6 +631,20 @@ macroScript XfbinImport_Open
 
         -- 7 = position, rotation and scale.
         local iKeys = XfbinCpp.buildAnimEx iIndex 7 spnScale.value
+
+        -- Auch hier die Sichtbarkeit: sonst steht bei einer
+        -- einzeln gesetzten Animation alles gleichzeitig da.
+        if (chkVis.checked and iKeys > 0) then
+        (
+          XfbinCpp.buildVisibility iIndex 0.0 (XfbinCpp.animFrames iIndex)
+          StepVisibilityKeys()
+        ) -- end of visibility check
+
+        if (chkMatAnim.checked and iKeys > 0) then
+        (
+          iKeys += XfbinCpp.buildMaterialAnim iIndex 0.0 \
+                   (XfbinCpp.animFrames iIndex)
+        ) -- end of material check
 
         if (iKeys <= 0) then
         (
@@ -628,6 +727,23 @@ macroScript XfbinImport_Open
               XfbinCpp.buildIdleKeys i fAt (fAt + fLen)
             ) -- end of idle check
 
+            -- Objects belonging to a model this animation never
+            -- mentions are hidden for its stretch of the
+            -- timeline. Without it every summoned creature
+            -- stands around in all 104 sequences.
+            if (chkVis.checked) then
+            (
+              XfbinCpp.buildVisibility i fAt (fAt + fLen)
+            ) -- end of visibility check
+
+            -- UV offset, tiling and opacity of the materials.
+            -- In this data it is mostly UV scrolling on eyes,
+            -- hair and effect surfaces.
+            if (chkMatAnim.checked) then
+            (
+              iKeys += XfbinCpp.buildMaterialAnim i fAt (fAt + fLen)
+            ) -- end of material check
+
             iKeys += XfbinCpp.buildAnimAt i fAt 7 spnScale.value
 
             if (NT != undefined) then
@@ -644,13 +760,24 @@ macroScript XfbinImport_Open
         ) -- end of try/catch
 
         progressEnd()
+
+        -- Once, at the end - not per animation. Walking every
+        -- object 104 times would take far longer than the import
+        -- itself.
+        local iStep = 0
+        if (chkVis.checked) then
+        (
+          iStep = StepVisibilityKeys()
+        ) -- end of step check
+
         enableSceneRedraw()
 
         animationRange = interval 0 fAt
 
         lblStatus.text = (iCount as string) + " animations, " + \
                          (iKeys as string) + " keys, " + \
-                         ((fAt as integer) as string) + " frames" + \
+                         ((fAt as integer) as string) + " frames, " + \
+                         (iStep as string) + " step keys" + \
                          (if (NT != undefined) then ", note track on scene root." \
                           else ", no note track.")
         lblTime.text   = XfbinCpp.timings()

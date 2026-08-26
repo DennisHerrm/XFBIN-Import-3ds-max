@@ -21,6 +21,9 @@
 #    6. Aufrufe von XfbinCpp.*, die die Plugin-API nicht kennt.
 #       Faellt sonst erst zur Laufzeit auf, und auch nur wenn man
 #       den Knopf drueckt.
+#    7. "continue" in Schleifen. Gibt es in MAXScript nicht -
+#       gewohnt aus anderen Sprachen, und faellt erst auf, wenn
+#       die Schleife tatsaechlich laeuft.
 #
 #  Rueckgabe: 0 = sauber, 1 = Probleme gefunden.
 # ============================================================
@@ -39,12 +42,14 @@ open close isOpen dump
 pageCount chunkCount countOfType namesOfType summary
 parseSkeleton clumpCount boneCount boneSummary boneDump buildSkeleton
 parseMeshes modelCount meshSummary meshDump buildMeshes buildMeshesSkinned
-parseAnims animCount animName animSummary animDump buildAnim buildAnimEx
-setQuatMode
-sceneBoneCount sceneClumpName clearScene sceneReport
+parseAnims parseAnimsAppend clearAnims animCount animName animSummary
+animDump buildAnim buildAnimEx
+setQuatMode setBoneSize
+sceneBoneCount sceneClumpName clearScene sceneReport layerReport buildMaterialAnim
 parseTextures textureCount materialCount textureSummary exportTextures
 buildMaterials
-buildAnimAt animFrames buildBindPoseKey sceneRootName
+buildAnimAt animFrames buildBindPoseKey buildIdleKeys buildVisibility
+sceneRootName
 fileClumpName requiredInstances buildSkeletonN buildMeshesN buildIdleKeys
 """.split())
 
@@ -90,6 +95,13 @@ def check(path):
                     and i < line):
                 problems.append('%s in Zeile %d aufgerufen, aber erst in '
                                 'Zeile %d definiert' % (name, i + 1, line + 1))
+
+    # --- continue: gibt es in MAXScript nicht ---
+    for i, ln in enumerate(lines):
+        t = re.sub(r'--.*$', '', ln)
+        if re.search(r'\bcontinue\b', t):
+            problems.append('Zeile %d: "continue" gibt es in MAXScript nicht'
+                            % (i + 1))
 
     # --- Handler auf existierende Controls ---
     ctrls = set()
