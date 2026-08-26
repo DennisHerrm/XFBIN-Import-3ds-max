@@ -1,6 +1,10 @@
 # XFBIN-Import-3ds-max
 XFBIN Import for 3ds Max
 
+
+youtube Presentation:
+https://www.youtube.com/watch?v=R0Xpl9ZzdVA&feature=youtu.be
+
 A native 3ds Max plugin that imports CyberConnect2 XFBIN files — the model, animation and texture container used by the Naruto: Ultimate Ninja Storm series, JoJo's Bizarre Adventure: All-Star Battle, and other CC2 titles.
 
 Models, skeletons, skinning, textures and animations, in one step. Works with 3ds Max 2016 through 2027.
@@ -17,7 +21,54 @@ Sequence mode	All animations laid out on one timeline with note tracks — the l
 
 Everything runs in C++. A character with 222 bones, 22 600 vertices and 72 800 keyframes loads in well under a second.
 
-Installing
+Installing the plugin
+
+Close 3ds Max first. While it is running the plugin file is locked and cannot be replaced.
+
+The quick way
+Download a release, or build from source (see below).
+Run INSTALLIERE.bat.
+Start 3ds Max. The tool appears under DH Tools → XFBIN Import.
+
+To remove it again, run DEINSTALLIERE.bat.
+
+By hand
+
+The installer only copies files — you can do the same yourself.
+
+Open the Explorer and paste this into the address bar:
+
+%APPDATA%\Autodesk\ApplicationPlugins
+
+That expands to C:\Users\<you>\AppData\Roaming\Autodesk\ApplicationPlugins. 3ds Max scans this folder on every start. It is the per-user location, so no administrator rights are needed.
+
+Create a folder XfbinImport there and arrange the files like this:
+
+%APPDATA%\Autodesk\ApplicationPlugins\
+└── XfbinImport\
+    ├── PackageContents.xml
+    └── Contents\
+        ├── 2016\  XfbinImport.dlu
+        ├── 2017\  XfbinImport.dlu
+        ├──  …      one folder per Max version
+        ├── 2027\  XfbinImport.dlu
+        ├── MacroScripts\
+        │   ├── XfbinImport.mcr      ← the user interface
+        │   └── XFBIN_Import.ms      ← optional launcher
+        └── Post-Start-Up_Scripts\
+            ├── XfbinMenu_2016_2024.ms
+            └── XfbinMenu_2025_2027.ms
+
+Two things matter:
+
+PackageContents.xml sits next to Contents, not inside it. Without it in the right place Max ignores the whole folder.
+The version folders are not interchangeable. Each .dlu is built against its own SDK. Loading a 2024 build in 2026 crashes Max rather than reporting an error. You only need the folder matching your Max version — the rest can be deleted.
+
+Start 3ds Max. You should see this in the Listener:
+
+XFBIN Import 1.5.2: Plugin geladen, Menue-Callback angemeldet
+
+Installing the source code and how to use it
 Download a release, or build from source (see below).
 Run INSTALLIERE.bat. It copies the package to %APPDATA%\Autodesk\ApplicationPlugins\XfbinImport.
 Start 3ds Max. The tool appears under DH Tools → XFBIN Import.
