@@ -1,7 +1,7 @@
 /*
     XFBIN Import  --  Starter fuer die Oberflaeche
     ==============================================
-    Version 1.5.2
+    Version 1.9.2
 
     Diese Datei brauchst du im Normalfall NICHT.
 
