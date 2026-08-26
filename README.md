@@ -11,6 +11,10 @@ other CC2 titles.
 
 Models, skeletons, skinning, textures and animations, in one step.
 
+Built on the format research of the
+**[Blender XFBIN Importer](https://github.com/Al-Hydra/Blender-XFBIN-Importer)**
+— if you work in Blender, use that one.
+
 [![Watch the presentation](https://img.youtube.com/vi/R0Xpl9ZzdVA/maxresdefault.jpg)](https://www.youtube.com/watch?v=R0Xpl9ZzdVA)
 
 <sub>▶ Click to watch the presentation on YouTube</sub>
@@ -40,17 +44,27 @@ vertices** and **72,800 keyframes** loads in well under a second.
 > Close 3ds Max first. While it is running the plugin file is locked
 > and cannot be replaced.
 
+### What is in this repository
+
+| Folder | What it is |
+| :--- | :--- |
+| `XfbinImport/` | **The ready-made plugin.** Copy this folder as it is — nothing to build. |
+| `XFBIN Import/` | The full source, build scripts and verification tools. |
+
+If you only want to use the importer, you need the first one.
+
 ### The quick way
 
-1. Download a release, or build from source — see [Building](#building).
-2. Run `INSTALLIERE.bat`.
+1. Download the repository (**Code → Download ZIP**) or a release.
+2. Copy the whole `XfbinImport` folder into
+   `%APPDATA%\Autodesk\ApplicationPlugins`.
 3. Start 3ds Max. The tool appears under **DH Tools → XFBIN Import**.
 
-To remove it again, run `DEINSTALLIERE.bat`.
+That is all — the folder already has the right shape. If you built from
+source instead, `INSTALLIERE.bat` does the copying for you, and
+`DEINSTALLIERE.bat` removes it again.
 
-### By hand
-
-The installer only copies files — you can do the same yourself.
+### Where it goes
 
 Paste this into the Explorer address bar:
 
@@ -62,7 +76,8 @@ It expands to `C:\Users\<you>\AppData\Roaming\Autodesk\ApplicationPlugins`.
 3ds Max scans this folder on every start. It is the per-user location,
 so no administrator rights are needed.
 
-Create a folder `XfbinImport` there and arrange the files like this:
+The `XfbinImport` folder from this repository has to end up looking
+exactly like this:
 
 ```text
 %APPDATA%\Autodesk\ApplicationPlugins\
@@ -212,9 +227,10 @@ xfbindump.exe file.xfbin --tex-o folder     :: extract textures as DDS
 
 ## How it was verified
 
-The format work is a port of the
+The format handling follows the
 [Blender XFBIN Importer](https://github.com/Al-Hydra/Blender-XFBIN-Importer),
-so its Python library makes an excellent reference implementation.
+so its Python library `xfbin_lib` makes an excellent reference
+implementation to check against.
 
 Every parsing stage writes a deterministic text dump, and
 `tools/pydump_*.py` produce the same dump from the Python library. The
@@ -253,12 +269,19 @@ references.
 
 ## Credits
 
-- **[Al-Hydra](https://github.com/Al-Hydra)** and
-  **[SutandoTsukai181](https://github.com/SutandoTsukai181)** for the
-  Blender XFBIN Importer and `xfbin_lib`, which document the format and
-  served as the reference throughout.
-- **[Smash Forge](https://github.com/jam1garner/Smash-Forge)** for the
-  original NUD and NUT research.
+This importer would not exist without the people who worked out the
+format in the first place.
+
+| Project | By | What it gave this one |
+| :--- | :--- | :--- |
+| [Blender-XFBIN-Importer](https://github.com/Al-Hydra/Blender-XFBIN-Importer) | [Al-Hydra](https://github.com/Al-Hydra) | The current Blender addon (4.2+). Its `xfbin_lib` is the reference implementation this project was verified against, line by line. |
+| [cc2_xfbin_blender](https://github.com/SutandoTsukai181/cc2_xfbin_blender) | [SutandoTsukai181](https://github.com/SutandoTsukai181) | The original addon and `xfbin_lib` (MIT), where the format work started. |
+| [Smash Forge](https://github.com/jam1garner/Smash-Forge) | [jam1garner](https://github.com/jam1garner) | The original NUD and NUT research the container parsing rests on. |
+
+**Working in Blender?** Use the
+[Blender XFBIN Importer](https://github.com/Al-Hydra/Blender-XFBIN-Importer)
+— it does import *and* export and is the more complete tool. This
+project exists for people whose pipeline runs through 3ds Max.
 
 XFBIN, NUCC, NUD and NUT are formats of CyberConnect2. This project is
 unaffiliated and is meant for modding and preservation.
