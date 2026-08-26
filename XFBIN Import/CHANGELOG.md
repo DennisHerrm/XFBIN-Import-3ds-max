@@ -1,5 +1,493 @@
 # Changelog
 
+## 1.9.2 - Sichtbarkeits-Keys entstehen jetzt wirklich
+
+### Warum viele Sequenzen keine hatten
+
+`INode::SetVisibility` legt **keinen Key an, wenn sich der Wert nicht
+aendert.** Fuer eine Sequenz, in der ein Mesh durchgehend unsichtbar
+ist, entstand damit gar nichts - und genau die braucht der
+Warcraft-3-Export: je Sequenz einen Key am Anfang und einen am Ende,
+auch wenn dazwischen nichts passiert.
+
+Die drei Faelle waren also richtig gedacht, aber zwei davon kamen nie
+in der Szene an.
+
+### Der Weg ueber IKeyControl
+
+Jetzt wird der Key angehaengt, ohne dass jemand den Wert vergleicht -
+dasselbe Verfahren, das das Animation Merge Tool fuer die Bones
+benutzt:
+
+    Control* vc = node->GetVisController();
+    if (!vc) { vc = CreateInstance(CTRL_FLOAT_CLASS_ID,
+                                   HYBRIDINTERP_FLOAT_CLASS_ID);
+               node->SetVisController(vc); }
+    IKeyControl* ik = GetKeyControlInterface(vc);
+
+    IBezFloatKey k;
+    k.time = t; k.val = v;
+    SetInTanType(k.flags,  BEZKEY_STEP);
+    SetOutTanType(k.flags, BEZKEY_STEP);
+    ik->AppendKey(&k);
+
+Zwei Dinge kommen dabei gratis dazu:
+
+- Die **Step-Tangenten** stehen direkt im Key. Der
+  MaxScript-Nachlauf bleibt als Sicherheitsnetz, ist aber nicht mehr
+  noetig.
+- Kein `AnimateOn` mehr - `AppendKey` schreibt unabhaengig vom
+  Animationsmodus.
+
+`AppendKey` verlangt aufsteigende Zeiten. Der Sequenzmodus haelt das
+ein; wer eine Animation einzeln nachtraegt, nicht. Deshalb laeuft am
+Ende ein `SortKeys()` ueber jede Spur - das bringt sie wieder in
+Ordnung, statt sie stillschweigend zu verderben.
+
+### Neu: tools/VIS_CHECK.ms
+
+Liest die Sequenzen aus dem Note Track des Szenen-Wurzelknotens und
+prueft fuer JEDES Mesh, ob im Bereich JEDER Sequenz mindestens zwei
+Sichtbarkeits-Keys liegen. Meldet die ersten fuenfzehn Fehlstellen mit
+Objekt- und Sequenznamen.
+
+Bei 632 Meshes und 104 Sequenzen sind das rund 65.000 Paarungen - von
+Hand nicht zu pruefen, und mit dem Auge im Viewport erst recht nicht.
+
+
+## 1.9.1 - Zwei Fehler, die nur das 2016er SDK zeigt
+
+### std::map fehlte im Header
+
+    error C2039: "map" ist kein Member von "std"
+
+`sceneMaterials_` steht als `std::map` im Header, das `#include <map>`
+stand aber nur in der `.cpp` - und die bindet den Header VOR ihren
+eigenen Includes ein. Auf den neueren SDKs faellt das nicht auf, weil
+deren Header `<map>` ohnehin mitziehen; das SDK von 2016 tut das nicht.
+
+Ein Header muss haben, was er benutzt. Sonst haengt er davon ab, was
+zufaellig vorher eingebunden wurde.
+
+### GetParamBlock ist verdeckt
+
+    error C2660: "BaseObject::GetParamBlock" akzeptiert keine 1 Argumente
+    error C2440: "IParamArray*" nicht in "IParamBlock2*" konvertierbar
+
+`Object` erbt von `BaseObject` ein parameterloses `GetParamBlock()`,
+das ein `IParamArray*` liefert - die alte Parameterblock-Fassung. Diese
+Ueberladung **verdeckt** `Animatable::GetParamBlock(int)`, der
+Compiler findet die gewuenschte Fassung also gar nicht mehr.
+
+Dieselbe Stelle ist in einem Forumsfall zum V-Ray-SDK beschrieben,
+mit derselben Antwort: `GetParamBlockByID()` benutzen. Der kommt direkt
+von `Animatable` und wird nicht verdeckt. Als Rueckfallebene steht der
+ausdruecklich qualifizierte Aufruf `Animatable::GetParamBlock(0)`
+dahinter, und `FindBaseObject()` sorgt dafuer, dass wirklich das
+Basisobjekt gefragt wird.
+
+### Neu: tools/PRUEFE_INCLUDES.py
+
+    python tools\PRUEFE_INCLUDES.py src\*.h src\*.cpp
+
+Prueft fuer sechzehn haeufige `std`-Typen, ob die Datei den passenden
+Header einbindet. Eine `.cpp` erbt dabei die Includes ihres
+gleichnamigen Headers - sonst meldet die Pruefung lauter Treffer, die
+keine sind.
+
+Gegengeprueft: mit entferntem `#include <map>` findet sie genau die
+Zeile, die den Build gekostet hat. Dabei kam gleich noch ein fehlendes
+`<utility>` heraus.
+
+Damit sind es vier Pruefungen, die vor dem Ausliefern laufen:
+
+| Werkzeug | prueft |
+|---|---|
+| `PRUEFE_SCRIPTS.py` | die MaxScript-Dateien |
+| `PRUEFE_API.py` | Plugin-Funktionen an allen drei Eintragungsstellen |
+| `PRUEFE_INCLUDES.py` | std-Typen gegen ihre Header |
+| `VERSION_SETZEN.py` | alle Versionsstellen auf einmal |
+
+Keine davon braucht 3ds Max.
+
+
+## 1.9.0 - Material-Animationen
+
+Die letzte offene Stelle aus der Liste bekannter Einschraenkungen.
+
+### Was in den Daten steht
+
+Ein Material-Eintrag animiert achtzehn Groessen. Ueber die vier
+Animationsdateien von Pein sind das 868 Kurven je Groesse, aber die
+meisten haben genau einen Key - sie sind konstant:
+
+| Kurve | Keyframes | |
+|---|---|---|
+| `V0_LocY` | 4.371 | animiert |
+| `U0_LocX` | 3.153 | animiert |
+| `V1_LocY` | 1.103 | leicht animiert |
+| `U1_LocX` | 1.023 | leicht animiert |
+| `Alpha` | 954 | leicht animiert |
+| `Glare`, `OutlineID`, `U3/V3` u. a. | je 868 | konstant |
+
+Bewegt wird also im Wesentlichen der Offset der ersten UV-Ebene:
+klassisches UV-Scrollen fuer Augen, Haare und Effektflaechen.
+
+### Was uebertragen wird
+
+| XFBIN | 3ds Max |
+|---|---|
+| `U0_LocX` / `V0_LocY` | Offset der Bitmap (`StdUVGen::SetUOffs` / `SetVOffs`) |
+| `U0_ScaleX` / `V0_ScaleY` | Kachelung der Bitmap |
+| `Alpha` | Deckkraft des Materials (`StdMat2::SetOpacity`) |
+
+Alle vier Methoden nehmen eine `TimeValue` entgegen, im
+`AnimateOn`-Block entstehen daraus also Keys - dieselbe Mechanik wie
+bei den Bones.
+
+Nicht uebertragen: `Glare`, `Falloff`, `BlendRate1/2`, `OutlineID`.
+Das sind Groessen des Shaders der Spiel-Engine, fuer die es in Max
+nichts Entsprechendes gibt. Sie werden gezaehlt und gemeldet - aber nur
+wenn sie tatsaechlich animiert sind, sonst waere die Meldung bei jeder
+Sequenz da.
+
+### Das Vorzeichen von V
+
+Beim Mesh-Import wird die V-Achse gespiegelt (`1-v`), weil Max die
+Textur andersherum aufzieht. Damit ist ein Versatz von `+dv` in der
+Datei ein Versatz von `-dv` in Max:
+
+    v_max  = 1 - v_datei
+    v_max' = 1 - (v_datei + dv) = v_max - dv
+
+Der V-Offset wird also negiert. Ohne das liefe eine scrollende Textur
+in die falsche Richtung - und zwar so plausibel, dass es beim
+Draufschauen kaum auffaellt.
+
+Die Kachelung bleibt unveraendert: bei einer gespiegelten Achse laesst
+sich eine Skalierung nicht sauber uebertragen, und in diesen Daten ist
+sie ohnehin konstant.
+
+### Neu in der Oberflaeche
+
+Haken **"Material anim"** neben "Visibility", standardmaessig an. Wirkt
+im Sequenzmodus wie beim einzelnen Setzen.
+
+Dafuer merkt sich das Plugin jetzt, welches Max-Material aus welchem
+XFBIN-Material entstanden ist - sonst faende die Animation ihr Ziel
+nicht wieder.
+
+
+## 1.8.1 - Bone-Groesse und Sichtbarkeit an der richtigen Stelle
+
+### Warum manche Bones mit 4 kamen
+
+Die Groesse wurde bis hierher in einem MaxScript-Nachlauf gesetzt, der
+nach dem Import ueber alle Objekte lief. Beim Umbau des Imports in
+1.6.0 ist der **Aufruf verlorengegangen** - die Funktion stand noch da
+und haengte weiter am Spinner, aber der Import rief sie nicht mehr auf.
+Wer den Spinner nicht anfasste, bekam Max' Standardwert 4.
+
+Jetzt setzt das Plugin Breite und Hoehe direkt beim Anlegen des
+Bone-Objekts:
+
+    IParamBlock2* bpb = bobj->GetParamBlock(0);
+    bpb->SetValue(0, 0, boneSize_);   // boneobj_width
+    bpb->SetValue(1, 0, boneSize_);   // boneobj_height
+
+`boneobj_width` und `boneobj_height` sind die ersten beiden Eintraege
+des Parameterblocks - so steht die Aufzaehlung in der SDK-Referenz. Die
+Oberflaeche gibt den Wert ueber `setBoneSize` weiter, bevor etwas
+angelegt wird.
+
+Der Unterschied ist nicht kosmetisch: ein Nachlauf kann vergessen
+werden, eine Zeile im Erzeugungspfad nicht.
+
+### Sichtbarkeit jetzt lueckenlos
+
+Zwei Luecken geschlossen:
+
+**Frame 0.** Die Bind-Pose hatte keinen Sichtbarkeits-Key. Damit hatte
+der erste Key der ersten Sequenz keinen Vorgaenger, und Max zog seinen
+Wert bis Frame 0 zurueck - schon die Ausgangslage war falsch.
+`buildBindPoseKey` setzt jetzt alle Meshes dort auf sichtbar.
+
+**Einzelne Animation.** "Apply selected" hat gar keine Sichtbarkeit
+gesetzt; es stand alles gleichzeitig da. Jetzt laeuft dort dasselbe wie
+im Sequenzmodus, inklusive der Step-Tangenten.
+
+Im Sequenzmodus war es schon vorher so, wie es sein soll: **jedes Mesh
+bekommt in JEDER Animation einen Key an beiden Enden** - aus der
+Deckkraftkurve, oder auf 1 wenn der Clump vorkommt aber keine Kurve
+hat, oder auf 0 wenn die Animation ihn gar nicht anspricht. Genau die
+drei Faelle, die der NeoDex-Import auch unterscheidet.
+
+
+## 1.8.0 - Layer und Bezier-Step-Sichtbarkeit
+
+### Layer je Modell
+
+Neuer Haken **"Sort into layers"**, standardmaessig an. Nach dem Import
+liegt jedes Skelett in zwei eigenen Layern:
+
+    2peabod1 Bones      2peabod1 Meshes
+    2pecbod1 Bones      2pecbod1 Meshes
+    2kycbod2 #2 Bones   2kycbod2 #2 Meshes
+    ...
+
+Bei siebzehn Skeletten und 1.793 Bones ist das der Unterschied zwischen
+einer benutzbaren Szene und einem Knaeuel.
+
+Die Zuordnung kommt aus dem Plugin - `layerReport()` liefert eine Zeile
+je Knoten mit Clump, Instanz, Art und Handle. Gebaut werden die Layer
+in MaxScript: dort sind es zwei benannte Aufrufe, in C++ waeren es
+`ILayerManager` und `ILayerProperties`. Dieselbe Ueberlegung wie bei
+der Bone-Groesse und beim Material-Editor.
+
+### Sichtbarkeit als Bezier Step
+
+Max schreibt Sichtbarkeits-Keys als `bezier_float` mit weichen
+Tangenten - ein Objekt blendet also ueber. Das ist hier falsch: eine
+Waffe ist da oder nicht, und Warcraft 3 kennt kein halb sichtbares
+Objekt.
+
+Uebernommen aus dem Visibility Keyer und dem NeoDex-Importer, die
+beide dasselbe tun:
+
+    o.visibility = bezier_float()
+    local k = addNewKey c t
+    k.value = v
+    k.inTangentType  = #step
+    k.outTangentType = #step
+
+Nach dem Sequenzlauf bekommt jeder Sichtbarkeits-Key auf jedem Objekt
+`#step` auf beiden Seiten - auch die Keys der nicht benutzten Waffen,
+die durchgehend auf 0 stehen. Die Statuszeile nennt die Anzahl.
+
+Das laeuft **einmal am Ende**, nicht je Animation: bei 104 Sequenzen
+waere ein Durchlauf ueber alle Objekte pro Sequenz laenger als der
+ganze Import.
+
+### MAXScript kennt kein "continue"
+
+Beim Layerbau hatte ich zwei `continue` stehen - gewohnt aus anderen
+Sprachen, in MAXScript aber nicht vorhanden. Waere zur Laufzeit
+aufgeschlagen, sobald eine Zeile des Berichts unvollstaendig ist.
+
+Ersetzt durch verschachtelte `if`-Bloecke, und als siebte Pruefung in
+`tools/PRUEFE_SCRIPTS.py` aufgenommen. Gegengeprueft: der Linter
+findet ein eingebautes `continue`.
+
+
+## 1.7.2 - Deskriptor-Eintraege ergaenzt
+
+### Der echte Fehler
+
+`clearAnims` und `parseAnimsAppend` standen nicht im
+Interface-Deskriptor. Sie waren im enum und in der
+`BEGIN_FUNCTION_MAP` eingetragen, aber nicht in der Liste, mit der
+sich das Interface bei MaxScript anmeldet.
+
+Das uebersetzt anstandslos - die Funktionen existieren im C++-Teil,
+sie sind nur nicht veroeffentlicht. In MaxScript sieht das genauso aus
+wie ein zu altes Plugin: "Unknown property". Ein Neubau haette den
+Fehler NICHT behoben.
+
+Eine Funktion muss an drei Stellen stehen:
+
+| Stelle | Datei |
+|---|---|
+| `fn_`-Wert im enum | `xfbinimport.h` |
+| Zeile in `BEGIN_FUNCTION_MAP` | `xfbinimport.h` |
+| Eintrag im Interface-Deskriptor | `xfbinimport.cpp` |
+
+### Neu: tools/PRUEFE_API.py
+
+Vergleicht die drei Listen und meldet jede Funktion, die nicht ueberall
+steht. Gegengeprueft mit absichtlich entfernten Eintraegen. Aktueller
+Stand: 57 Funktionen, an allen drei Stellen.
+
+Das ist die Pruefung, die den Fehler tatsaechlich gefunden haette - sie
+liest den Quelltext, nicht den laufenden Zustand.
+
+### Wieder entfernt: die Funktionspruefung zur Laufzeit
+
+Zwischenzeitlich sollten die Skripte beim Start ueber `getPropNames`
+abfragen, welche Funktionen das geladene Plugin kennt. Das war falsch:
+`getPropNames` liefert EIGENSCHAFTEN, und die Funktionen dieses
+Interfaces sind ueber `FN_0` und `FN_3` als METHODEN veroeffentlicht.
+Die Liste kam leer zurueck, also galten alle neun als fehlend - auch
+bei einem tagesaktuellen Plugin.
+
+Die Doku sagt zwar, dass `getPropNames` mit Interface-Werten
+funktioniert; sie sagt aber nicht, dass Methoden darin auftauchen. Ich
+habe das nicht nachgeprueft, bevor ich eine Sperre darauf gebaut habe,
+und damit ein funktionierendes Plugin blockiert.
+
+Raus. Es bleibt bei der Anzeige der Plugin-Version in der Kopfzeile.
+
+## 1.7.1 - Versionsnummern, die zusammenpassen
+
+Beim Importieren:
+
+    Unknown property: "clearAnims" in <Interface:XfbinCpp>
+
+Ursache war einfach: die neuen Skripte waren installiert, das Plugin
+aber nicht neu gebaut. `clearAnims`, `parseAnimsAppend` und
+`buildVisibility` sind neu im C++-Teil, und `INSTALLIERE.bat` kopiert
+nur - es baut nicht.
+
+### Die Oberflaeche sagt es jetzt beim Start
+
+Das Skript kennt die Plugin-Version, die es erwartet, und vergleicht
+sie beim Oeffnen. Passt sie nicht, steht es in der Kopfzeile und in
+der Statuszeile, mit dem naechsten Schritt dabei - statt mitten im
+Import als "Unknown property" aufzuschlagen.
+
+### Dabei aufgefallen: der Header stand auf 1.4.0
+
+Bei 1.4.1 war die Aenderung reines MaxScript, also blieb die
+Plugin-Version bewusst stehen. Alle folgenden Erhoehungen liefen dann
+ueber "alte Nummer suchen, neue einsetzen" - und suchten eine Nummer,
+die im Header gar nicht mehr stand. Der Ersetzungsvorgang fand nichts,
+meldete aber auch nichts.
+
+Ergebnis: das Fenster zeigte fuenf Versionen lang "Plugin 1.4.0",
+waehrend Paket und Skripte weiterliefen. Nur kosmetisch, aber es haette
+die neue Versionspruefung sofort blockiert.
+
+### Neu: tools/VERSION_SETZEN.py
+
+    python tools\VERSION_SETZEN.py 1.8.0
+
+Setzt alle sechs Stellen auf einmal - Plugin-Header,
+`PackageContents.xml`, beide Batchdateien, die Kopfzeilen der
+MaxScript-Dateien und die vom Skript erwartete Plugin-Version. Vergibt
+dabei einen neuen `ProductCode`, wie die Autodesk-Doku es fuer jede
+Aenderung von `AppVersion` verlangt; `UpgradeCode` bleibt.
+
+Entscheidend: es **setzt** die Stellen per regulaerem Ausdruck, statt
+eine alte Nummer zu suchen. Steht eine Stelle aus irgendeinem Grund
+woanders, wird sie trotzdem richtig gesetzt. Danach liest das Werkzeug
+alle drei Leitstellen zurueck und meldet einen Fehler, falls sie
+auseinanderlaufen - gegengeprueft mit einer absichtlich verstellten
+Datei.
+
+
+## 1.7.0 - Sichtbarkeit
+
+Die Frage war, ob zwei Modelle in einer Animation korrekt dargestellt
+werden. Die Bewegung ja - seit 1.6.0 stehen alle Skelette nebeneinander
+in der Szene und werden gemeinsam angesteuert. Die Sichtbarkeit nicht.
+
+### Was fehlte
+
+Kanal 3 eines Bone-Eintrags ist die Deckkraft, und sie ist in diesen
+Dateien das Mittel, mit dem Modelle erscheinen und verschwinden.
+Nachgezaehlt in `2peabod1l`:
+
+| Clump | wird ein-/ausgeblendet in |
+|---|---|
+| `2peabod1` (Pein selbst) | 11 Animationen |
+| `2kyfbod1` | 8 |
+| `2kycbod2` | 6 |
+| `2pesword` | 5 |
+
+Die Kurve wurde gelesen, aber nicht angewendet. Damit stand jedes
+Modell in JEDER Sequenz sichtbar herum - bei 104 Sequenzen und
+siebzehn Skeletten ein Bild, in dem der halbe Bosskampf gleichzeitig
+auf der Matte steht.
+
+### Was jetzt passiert
+
+`buildVisibility <index> <start> <end>` unterscheidet drei Faelle:
+
+| Lage | Ergebnis |
+|---|---|
+| Clump kommt in dieser Animation gar nicht vor | unsichtbar ueber die ganze Sequenz |
+| Mesh-Bone hat eine Deckkraft-Kurve | deren Verlauf als Sichtbarkeit |
+| Clump kommt vor, aber ohne Kurve | sichtbar, mit Key an beiden Enden |
+
+Der Key an beiden Enden ist aus demselben Grund noetig wie bei den
+Rest keys: sonst blendet Max zwischen zwei Sequenzen ueber.
+
+In der Oberflaeche der Haken **"Visibility"** neben "Rest keys",
+standardmaessig an.
+
+### Dafuer noetig: sceneMeshes_
+
+`meshNodes_` wird bei jedem `buildMeshes` geleert und kennt nur die
+zuletzt geladene Datei - fuer `buildMaterials` reicht das, weil es
+direkt danach laeuft. Die Sichtbarkeit braucht den ganzen Bestand ueber
+alle sechs Modelldateien hinweg, mit Clump, Mesh-Bone und
+Instanznummer je Objekt. Dafuer gibt es jetzt eine zweite Liste, die
+nur `clearScene()` leert.
+
+
+## 1.6.0 - Mehrere Animationsdateien, Instanzen je Clump
+
+Ausgeloest durch einen Charakter, der deutlich groesser ist als der
+bisherige Testfall: Pein bringt sechs Modelldateien mit siebzehn
+Skeletten und **vier** Animationsdateien mit zusammen **104
+Animationen** mit.
+
+Daran sind zwei Annahmen zerbrochen.
+
+### Nur eine Animationsdatei wurde geladen
+
+Der Import nahm `aAnimFiles[1]` und liess den Rest liegen. Bei Haku
+gab es nur eine, also fiel es nicht auf; bei Pein waeren 67 von 104
+Animationen stillschweigend verschwunden.
+
+Jetzt werden alle geladen. `parseAnimsAppend()` haengt an, statt zu
+ersetzen, und `open()` wirft die bereits geladenen Animationen nicht
+mehr weg - sie beschreiben nicht die Datei, sondern den geladenen
+Bestand, genauso wie `sceneClumps_` die Szene beschreibt und nicht die
+Datei. Derselbe Unterschied wie in 0.5.1 und 1.1.0, diesmal eine Ebene
+weiter.
+
+Geprueft: die 104 Animationsnamen sind ueber alle vier Dateien hinweg
+eindeutig. Fuer die Note Tracks im Sequenzmodus heisst das, dass es
+keine Namenskollisionen gibt.
+
+### Ein Instanzwert je Datei reicht nicht
+
+Bisher bekam `buildSkeletonN` eine Kopienzahl fuer die ganze Datei. Das
+ging, solange eine Datei ein Skelett enthielt. `2peaacc2` enthaelt
+vier, und der Bedarf ist unterschiedlich:
+
+| Clump | Instanzen |
+|---|---|
+| `2kycbod2` | 3 |
+| `2enmbod1`, `2enmhand`, `2kyfbod1` | je 1 |
+
+Mit einem gemeinsamen Wert waeren zwangslaeufig zwei ungenutzte Kopien
+der uebrigen drei entstanden.
+
+`copies = 0` heisst jetzt: das Plugin sieht fuer JEDEN Clump selbst
+nach, wie viele Exemplare die geladenen Animationen erwarten.
+`buildMeshesN` folgt dem und baut ein Modell nur fuer die Instanzen,
+die es auch gibt. Der ganze Umweg ueber `fileClumpName()` in MaxScript
+entfaellt damit - die Information liegt im Plugin, dort gehoert die
+Entscheidung auch hin.
+
+### Reihenfolge im Import
+
+Erst alle Animationsdateien, dann die Modelle. Vorher war es
+umgekehrt, und dann steht beim Anlegen der Skelette noch nicht fest,
+wie viele Exemplare gebraucht werden.
+
+### Was dabei auffiel
+
+Dreizehn der angesprochenen Clumps haben in diesem Ordner gar kein
+Modell - `2pesword`, `1efc_dmy01`, `wrinkles`, mehrere
+`2peaeff1_*` und andere. Das sind Effekte und Figuren aus anderen
+Dateien; ihre Eintraege werden wie gehabt uebersprungen und gemeldet.
+Vier Skelette aus `2peaacc3` bis `2peaacc5` werden von keiner
+Animation angesprochen (Bosskampf-Gegner) und stehen nach dem Import
+in Ruhelage.
+
+
 ## 1.5.2 - /permissive- wird ermittelt, nicht geraten
 
 2016 bis 2018 bauten durch, 2019 nicht. Alle Fehler standen dabei in

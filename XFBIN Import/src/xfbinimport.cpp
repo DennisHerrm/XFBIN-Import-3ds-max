@@ -47,6 +47,7 @@
 #include <locale>
 #include <map>
 #include <set>
+#include <utility>
 #include <algorithm>
 #include <sstream>
 #include <string>
@@ -117,6 +118,8 @@ static XfbinImportInterface theXfbinImportInterface(
 
     // --- Stufe 5: Animationen ---
     fn_parseAnims, _T("parseAnims"), 0, TYPE_INT, 0, 0,
+    fn_parseAnimsAppend, _T("parseAnimsAppend"), 0, TYPE_INT, 0, 0,
+    fn_clearAnims, _T("clearAnims"), 0, TYPE_INT, 0, 0,
     fn_animCount, _T("animCount"), 0, TYPE_INT, 0, 0,
     fn_animName, _T("animName"), 0, TYPE_STRING, 0, 1,
         _T("index"), 0, TYPE_INT,
@@ -133,6 +136,8 @@ static XfbinImportInterface theXfbinImportInterface(
         _T("scale"), 0, TYPE_FLOAT,
     fn_setQuatMode, _T("setQuatMode"), 0, TYPE_INT, 0, 1,
         _T("mode"), 0, TYPE_INT,
+    fn_setBoneSize, _T("setBoneSize"), 0, TYPE_INT, 0, 1,
+        _T("size"), 0, TYPE_FLOAT,
     fn_buildAnimAt, _T("buildAnimAt"), 0, TYPE_INT, 0, 4,
         _T("index"), 0, TYPE_INT,
         _T("startFrame"), 0, TYPE_FLOAT,
@@ -143,6 +148,10 @@ static XfbinImportInterface theXfbinImportInterface(
     fn_buildBindPoseKey, _T("buildBindPoseKey"), 0, TYPE_INT, 0, 1,
         _T("frame"), 0, TYPE_FLOAT,
     fn_buildIdleKeys, _T("buildIdleKeys"), 0, TYPE_INT, 0, 3,
+        _T("index"), 0, TYPE_INT,
+        _T("startFrame"), 0, TYPE_FLOAT,
+        _T("endFrame"), 0, TYPE_FLOAT,
+    fn_buildVisibility, _T("buildVisibility"), 0, TYPE_INT, 0, 3,
         _T("index"), 0, TYPE_INT,
         _T("startFrame"), 0, TYPE_FLOAT,
         _T("endFrame"), 0, TYPE_FLOAT,
@@ -166,6 +175,11 @@ static XfbinImportInterface theXfbinImportInterface(
     fn_sceneClumpName, _T("sceneClumpName"), 0, TYPE_STRING, 0, 0,
     fn_clearScene, _T("clearScene"), 0, TYPE_INT, 0, 0,
     fn_sceneReport, _T("sceneReport"), 0, TYPE_STRING, 0, 0,
+    fn_layerReport, _T("layerReport"), 0, TYPE_STRING, 0, 0,
+    fn_buildMaterialAnim, _T("buildMaterialAnim"), 0, TYPE_INT, 0, 3,
+        _T("index"), 0, TYPE_INT,
+        _T("startFrame"), 0, TYPE_FLOAT,
+        _T("endFrame"), 0, TYPE_FLOAT,
 
     // --- Stufe 4: Texturen und Materialien ---
     fn_parseTextures, _T("parseTextures"), 0, TYPE_INT, 0, 0,
@@ -394,8 +408,10 @@ int XfbinImportInterface::Open(const MCHAR* path) {
     skeletonParsed_ = false;
     models_.clear();
     meshesParsed_   = false;
-    anims_.clear();
-    animsParsed_    = false;
+    // anims_ wird NICHT geleert: ein Charakter kann mehrere
+    // Animationsdateien haben (bei Pein sind es vier mit
+    // zusammen 104 Animationen), und die werden nacheinander
+    // geoeffnet und angehaengt. Zum Leeren gibt es clearAnims().
     textures_.clear();
     materials_.clear();
     textureFiles_.clear();
@@ -678,9 +694,16 @@ int XfbinImportInterface::BuildSkeleton(int mode, float scale) {
 //  gleiche Waffen. Beide brauchen ein eigenes Skelett, sonst
 //  ueberschreibt die zweite Instanz die Keys der ersten.
 // ------------------------------------------------------------
+// copies <= 0 bedeutet: fuer JEDEN Clump der Datei selbst
+// nachsehen, wie viele Exemplare die geladenen Animationen
+// erwarten.
+//
+// Ein fester Wert je Datei reicht nicht. 2peaacc2 enthaelt vier
+// Skelette, von denen eines dreimal gebraucht wird und die
+// anderen je einmal - mit einem gemeinsamen Wert entstuenden
+// zwangslaeufig zwei ungenutzte Kopien der uebrigen drei.
 int XfbinImportInterface::BuildSkeletonN(int mode, float scale, int copies) {
     if (!RequireSkeleton(L"buildSkeleton")) return 0;
-    if (copies < 1) copies = 1;
 
     Interface* ip = GetCOREInterface();
     if (ip == nullptr) {
@@ -719,7 +742,9 @@ int XfbinImportInterface::BuildSkeletonN(int mode, float scale, int copies) {
     // laufender Nummer. Eine schon vorhandene Instanz derselben
     // Nummer wird ueberschrieben statt verdoppelt.
     for (const xfbin::Clump& c : clumps_) {
-        for (int k = 0; k < copies; ++k) {
+        const int n = (copies > 0) ? copies : RequiredInstancesRaw(c.name);
+
+        for (int k = 0; k < n; ++k) {
             size_t slot = SIZE_MAX;
             for (size_t i = 0; i < sceneClumps_.size(); ++i) {
                 if (sceneClumps_[i].name == c.name && sceneInstance_[i] == k) {
@@ -740,8 +765,9 @@ int XfbinImportInterface::BuildSkeletonN(int mode, float scale, int copies) {
 
     for (size_t ci = 0; ci < clumps_.size(); ++ci) {
       const xfbin::Clump& clump = clumps_[ci];
+      const int nCopies = (copies > 0) ? copies : RequiredInstancesRaw(clump.name);
 
-      for (int copy = 0; copy < copies; ++copy) {
+      for (int copy = 0; copy < nCopies; ++copy) {
         // Den Platz im Szenenzustand ueber Name UND laufende
         // Nummer finden - die Reihenfolge in clumps_ und in
         // sceneClumps_ ist nicht dieselbe, sobald mehrere
@@ -826,6 +852,58 @@ int XfbinImportInterface::BuildSkeletonN(int mode, float scale, int copies) {
             // Elternteil zeichnen lassen.
             node->ShowBone(1);
             node->SetBoneNodeOnOff(TRUE, 0);
+
+            // ------------------------------------------------
+            //  Breite und Hoehe des Bone-Objekts
+            //
+            //  Max legt sie mit 4 an. Bei 1.793 Bones wird
+            //  daraus ein Teppich aus Kaesten, der das Modell
+            //  verdeckt; 0 zeichnet blosse Linien.
+            //
+            //  Das stand bis 1.8.0 in einem MaxScript-Nachlauf
+            //  und ist beim Umbau des Imports verlorengegangen,
+            //  ohne dass es jemand gemerkt haette. Hier beim
+            //  Anlegen kann das nicht passieren.
+            //
+            //  boneobj_width und boneobj_height sind die ersten
+            //  beiden Eintraege des Parameterblocks - so steht
+            //  die Aufzaehlung in der SDK-Referenz.
+            // ------------------------------------------------
+            if (mode == 1 && boneSize_ >= 0.0f) {
+                Object* bobj = node->GetObjectRef();
+                if (bobj != nullptr) bobj = bobj->FindBaseObject();
+
+                if (bobj != nullptr) {
+                    // GetParamBlockByID, nicht GetParamBlock(0):
+                    //
+                    // Object erbt von BaseObject ein
+                    // parameterloses GetParamBlock(), das ein
+                    // IParamArray* liefert - die alte
+                    // Parameterblock-Fassung. Diese Ueberladung
+                    // VERDECKT Animatable::GetParamBlock(int),
+                    // also findet der Compiler die gewuenschte
+                    // Fassung gar nicht mehr. Genau darueber
+                    // stolpert man mit
+                    //   "akzeptiert keine 1 Argumente" und
+                    //   "IParamArray* kann nicht in
+                    //    IParamBlock2* konvertiert werden".
+                    //
+                    // GetParamBlockByID kommt direkt von
+                    // Animatable und wird nicht verdeckt.
+                    IParamBlock2* bpb = bobj->GetParamBlockByID(0);
+
+                    // Rueckfallebene: die verdeckte Fassung
+                    // ausdruecklich qualifiziert aufrufen.
+                    if (bpb == nullptr) {
+                        bpb = bobj->Animatable::GetParamBlock(0);
+                    }
+
+                    if (bpb != nullptr) {
+                        bpb->SetValue(0, 0, boneSize_);   // boneobj_width
+                        bpb->SetValue(1, 0, boneSize_);   // boneobj_height
+                    }
+                }
+            }
             node->SetRenderable(FALSE);
 
             made[static_cast<size_t>(idx)] = node;
@@ -1223,10 +1301,12 @@ int XfbinImportInterface::BuildMeshesSkinned(int skipLod, int explicitNormals,
     return BuildMeshesN(skipLod, explicitNormals, applySkin, scale, 1);
 }
 
+// copies <= 0: die Zahl ergibt sich aus dem Skelett. Wie viele
+// Instanzen eines Clumps in der Szene stehen, so viele Exemplare
+// seiner Modelle werden gebaut.
 int XfbinImportInterface::BuildMeshesN(int skipLod, int explicitNormals,
                                        int applySkin, float scale, int copies) {
     if (!RequireMeshes(L"buildMeshes")) return 0;
-    if (copies < 1) copies = 1;
 
     Interface* ip = GetCOREInterface();
     if (ip == nullptr) {
@@ -1247,7 +1327,18 @@ int XfbinImportInterface::BuildMeshesN(int skipLod, int explicitNormals,
 
     meshNodes_.clear();
 
-    for (int copy = 0; copy < copies; ++copy) {
+    // Die groesste vorkommende Instanzzahl bestimmt, wie oft der
+    // Durchlauf ueberhaupt noetig ist; je Modell wird darin
+    // geprueft, ob es diese Instanz gibt.
+    int maxCopies = (copies > 0) ? copies : 1;
+    if (copies <= 0) {
+        for (const xfbin::Clump& c : clumps_) {
+            const int n = RequiredInstancesRaw(c.name);
+            if (n > maxCopies) maxCopies = n;
+        }
+    }
+
+    for (int copy = 0; copy < maxCopies; ++copy) {
       // Ab der zweiten Instanz einen Zusatz an den Namen - wie
       // bei den Bones auch.
       const std::wstring suffix =
@@ -1300,6 +1391,23 @@ int XfbinImportInterface::BuildMeshesN(int skipLod, int explicitNormals,
             model.meshBoneIndex < clump->nodes.size()) {
             meshBone   = &clump->nodes[model.meshBoneIndex];
             meshMatrix = meshBone->world;
+        }
+
+        // Gibt es diese Instanz fuer den Clump des Modells gar
+        // nicht, wird das Modell in diesem Durchlauf ausgelassen.
+        // Bei automatischer Zaehlung laeuft die Schleife bis zur
+        // groessten vorkommenden Instanzzahl - die meisten Clumps
+        // brauchen weniger.
+        if (copies <= 0 && clump != nullptr) {
+            bool exists = false;
+            for (size_t i = 0; i < sceneClumps_.size(); ++i) {
+                if (sceneClumps_[i].name == clump->name &&
+                    sceneInstance_[i] == copy) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) continue;
         }
 
         // --- Groessen zaehlen ---
@@ -1526,6 +1634,16 @@ int XfbinImportInterface::BuildMeshesN(int skipLod, int explicitNormals,
             ref.handle     = node->GetHandle();
             ref.modelIndex = modelIdx;
             meshNodes_.push_back(ref);
+
+            // Fuer die Sichtbarkeit: ueber Dateigrenzen hinweg
+            // merken, zu welchem Clump und Mesh-Bone dieses
+            // Objekt gehoert.
+            SceneMesh sm;
+            sm.handle    = ref.handle;
+            sm.instance  = copy;
+            if (clump != nullptr) sm.clumpName = clump->name;
+            if (meshBone != nullptr) sm.boneName = meshBone->name;
+            sceneMeshes_.push_back(sm);
         }
 
         // ------------------------------------------------------
@@ -1588,22 +1706,44 @@ int XfbinImportInterface::BuildMeshesN(int skipLod, int explicitNormals,
 // ============================================================
 
 bool XfbinImportInterface::RequireAnims(const wchar_t* what) {
+    // Sind schon Animationen geladen, braucht es keine offene
+    // Datei mehr - sie koennen aus mehreren stammen.
+    if (animsParsed_ && !anims_.empty()) return true;
     if (!RequireFile(what)) return false;
-    if (animsParsed_) return true;
-    return (ParseAnims() >= 0);
+    return (ParseAnimsAppend() >= 0);
 }
 
 int XfbinImportInterface::ParseAnims() {
-    if (!RequireFile(L"parseAnims")) return -1;
-
     anims_.clear();
     animsParsed_ = false;
+    return ParseAnimsAppend();
+}
 
+int XfbinImportInterface::ClearAnims() {
+    const int had = static_cast<int>(anims_.size());
+    anims_.clear();
+    animsParsed_ = false;
+    return had;
+}
+
+// ------------------------------------------------------------
+//  Animationen der geoeffneten Datei ANHAENGEN
+//
+//  Ein Charakter kann mehr als eine Animationsdatei haben. Pein
+//  bringt vier mit - Hauptanimationen, Zusatzkombos,
+//  Nachzuegler und Ultimates - zusammen 104 Stueck, und sie
+//  sprechen gemeinsam siebzehn verschiedene Skelette an. Nur die
+//  erste zu laden hiesse, zwei Drittel wegzuwerfen.
+// ------------------------------------------------------------
+int XfbinImportInterface::ParseAnimsAppend() {
+    if (!RequireFile(L"parseAnims")) return -1;
+
+    std::vector<xfbin::Anm> fresh;
     std::string err, warn;
 
     Stopwatch sw;
-    const bool ok = xfbin::ParseAnims(*file_, anims_, err, warn);
-    msAnims_ = sw.ms();
+    const bool ok = xfbin::ParseAnims(*file_, fresh, err, warn);
+    msAnims_ += sw.ms();
 
     if (!warn.empty()) {
         std::istringstream in(warn);
@@ -1611,19 +1751,23 @@ int XfbinImportInterface::ParseAnims() {
         while (std::getline(in, line)) AddWarning(Utf8ToWide(line));
     }
 
-    if (anims_.empty()) {
-        SetError(Utf8ToWide(err));
-        return -1;
+    if (fresh.empty()) {
+        if (anims_.empty()) SetError(Utf8ToWide(err));
+        return anims_.empty() ? -1 : 0;
     }
 
+    const size_t before = anims_.size();
+    anims_.insert(anims_.end(), fresh.begin(), fresh.end());
     animsParsed_ = true;
 
     size_t keys = 0;
     for (const xfbin::Anm& a : anims_) keys += a.KeyframeCount();
 
-    wchar_t buf[256];
-    swprintf_s(buf, L"parseAnims: %zu Animationen, %zu Keyframes in %.1f ms%s",
-               anims_.size(), keys, msAnims_, ok ? L"" : L" (mit Hinweisen)");
+    wchar_t buf[320];
+    swprintf_s(buf, L"parseAnims: +%zu Animationen (jetzt %zu), %zu Keyframes"
+                    L" in %.1f ms%s",
+               anims_.size() - before, anims_.size(), keys, msAnims_,
+               ok ? L"" : L" (mit Hinweisen)");
     Log(buf);
 
     return static_cast<int>(keys);
@@ -1681,6 +1825,13 @@ int XfbinImportInterface::AnimDump(const MCHAR* outPath, int withKeys) {
 // 0 = direkt uebernehmen (Standard, wie 0.5.4),
 // 1 = konjugieren. Der Umschalter wirkt auf BEIDE
 // Rotationsquellen - Quaternion- wie Euler-Kurven.
+// Breite und Hoehe der Bone-Objekte. Negativ heisst: Max'
+// Standardwert stehen lassen.
+int XfbinImportInterface::SetBoneSize(float size) {
+    boneSize_ = size;
+    return 1;
+}
+
 int XfbinImportInterface::SetQuatMode(int mode) {
     quatMode_ = (mode != 0) ? 1 : 0;
     return quatMode_;
@@ -2141,6 +2292,383 @@ int XfbinImportInterface::BuildIdleKeys(int index, float startFrame,
     return keyed;
 }
 
+
+
+// ------------------------------------------------------------
+//  Einen Sichtbarkeits-Key schreiben - immer
+//
+//  INode::SetVisibility legt KEINEN Key an, wenn der Wert sich
+//  nicht aendert. Fuer eine Animation, in der ein Mesh
+//  durchgehend unsichtbar ist, entsteht damit gar nichts - und
+//  genau die braucht der Warcraft-3-Export: je Sequenz einen
+//  Key am Anfang und einen am Ende, auch wenn dazwischen nichts
+//  passiert.
+//
+//  Deshalb der Weg ueber IKeyControl, wie ihn das Animation
+//  Merge Tool fuer die Bones nimmt: der Key wird angehaengt,
+//  ohne dass jemand den Wert vergleicht.
+//
+//  Die Tangenten stehen gleich auf BEZKEY_STEP. Sichtbarkeit
+//  kennt kein Dazwischen - ein Objekt ist da oder nicht, und
+//  Warcraft 3 hat fuer halb sichtbar keine Entsprechung.
+// ------------------------------------------------------------
+namespace {
+
+IKeyControl* GetVisKeys(INode* node) {
+    Control* vc = node->GetVisController();
+
+    if (vc == nullptr) {
+        vc = static_cast<Control*>(CreateInstance(
+            CTRL_FLOAT_CLASS_ID, Class_ID(HYBRIDINTERP_FLOAT_CLASS_ID, 0)));
+        if (vc == nullptr) return nullptr;
+        node->SetVisController(vc);
+    }
+
+    return GetKeyControlInterface(vc);
+}
+
+void AppendVisKey(IKeyControl* ik, TimeValue t, float value) {
+    if (ik == nullptr) return;
+
+    IBezFloatKey k;
+    memset(&k, 0, sizeof(k));
+
+    k.time   = t;
+    k.val    = value;
+    k.intan  = 0.0f;
+    k.outtan = 0.0f;
+    k.inLength  = 0.0f;
+    k.outLength = 0.0f;
+
+    SetInTanType(k.flags,  BEZKEY_STEP);
+    SetOutTanType(k.flags, BEZKEY_STEP);
+
+    ik->AppendKey(&k);
+}
+
+} // namespace
+
+// ------------------------------------------------------------
+//  Sichtbarkeit aus der Deckkraft
+//
+//  Kanal 3 eines Bone-Eintrags ist die Deckkraft, und sie ist in
+//  diesen Dateien das Mittel, mit dem Modelle erscheinen und
+//  verschwinden. In den Zusatzanimationen von Pein wird
+//  "2kyfbod1" in acht Animationen ein- und ausgeblendet, Pein
+//  selbst in elf.
+//
+//  Ohne das steht jedes Modell in JEDER Sequenz sichtbar herum -
+//  bei 104 Sequenzen und siebzehn Skeletten ein Bild, in dem der
+//  halbe Bosskampf gleichzeitig auf der Matte steht.
+//
+//  Drei Faelle:
+//    * Clump kommt in dieser Animation gar nicht vor
+//        -> unsichtbar ueber die ganze Sequenz
+//    * Mesh-Bone hat eine Deckkraft-Kurve
+//        -> deren Verlauf als Sichtbarkeit
+//    * Clump kommt vor, aber ohne Deckkraft-Kurve
+//        -> sichtbar, mit Key an beiden Enden
+//
+//  Der Key an beiden Enden ist auch hier noetig: sonst blendet
+//  Max zwischen zwei Sequenzen ueber.
+// ------------------------------------------------------------
+int XfbinImportInterface::BuildVisibility(int index, float startFrame,
+                                          float endFrame) {
+    if (!RequireAnims(L"buildVisibility")) return 0;
+    if (index < 0 || index >= static_cast<int>(anims_.size())) return 0;
+    if (sceneMeshes_.empty()) return 0;
+
+    Interface* ip = GetCOREInterface();
+    if (ip == nullptr) return 0;
+
+    const xfbin::Anm& anm = anims_[static_cast<size_t>(index)];
+    const int tpf = GetTicksPerFrame();
+
+    const TimeValue t0 =
+        static_cast<TimeValue>(static_cast<double>(startFrame) * tpf + 0.5);
+    const TimeValue t1 =
+        static_cast<TimeValue>(static_cast<double>(endFrame) * tpf + 0.5);
+
+    // Welche Clump-Namen spricht diese Animation ueberhaupt an?
+    std::set<std::string> present;
+    for (const xfbin::AnmClumpRef& c : anm.clumps) present.insert(c.clumpName);
+
+    SceneRedrawGuard redrawGuard(ip);
+    HoldSuspendGuard holdGuard;
+
+    int touched = 0;
+    int hidden  = 0;
+
+    // Kein AnimateOn noetig: IKeyControl::AppendKey schreibt den
+    // Key unabhaengig vom Animationsmodus.
+    for (const SceneMesh& m : sceneMeshes_) {
+        INode* node = ip->GetINodeByHandle(m.handle);
+        if (node == nullptr) continue;
+
+        IKeyControl* ik = GetVisKeys(node);
+        if (ik == nullptr) continue;
+
+        // --- Fall 1: gehoert nicht zu dieser Animation ---
+        if (present.find(m.clumpName) == present.end()) {
+            AppendVisKey(ik, t0, 0.0f);
+            AppendVisKey(ik, t1, 0.0f);
+            ++hidden;
+            ++touched;
+            continue;
+        }
+
+        // --- Fall 2: Deckkraft-Kurve des Mesh-Bones suchen ---
+        const xfbin::AnmCurve* opacity = nullptr;
+
+        for (const xfbin::AnmEntry& e : anm.entries) {
+            if (e.entryFormat != xfbin::kEntryBone) continue;
+            if (e.clumpName != m.clumpName) continue;
+            if (e.targetName != m.boneName) continue;
+
+            // Die richtige Instanz: so viele gleichnamige
+            // Clump-Referenzen stehen vor dieser.
+            int inst = 0;
+            for (int ci = 0; ci < e.clumpIndex; ++ci) {
+                if (static_cast<size_t>(ci) < anm.clumps.size() &&
+                    anm.clumps[static_cast<size_t>(ci)].clumpName == e.clumpName) {
+                    ++inst;
+                }
+            }
+            if (inst != m.instance) continue;
+
+            for (const xfbin::AnmCurve& c : e.curves) {
+                if (xfbin::BoneChannelOf(c.curveIndex, c.curveFormat) ==
+                        xfbin::kChannelOpacity && !c.keys.empty()) {
+                    opacity = &c;
+                }
+            }
+            break;
+        }
+
+        if (opacity != nullptr) {
+            // Anfang und Ende festnageln, damit nichts in die
+            // Nachbarsequenzen laeuft.
+            AppendVisKey(ik, t0,
+                static_cast<float>(opacity->keys.front().value[0]));
+
+            for (const xfbin::AnmKey& k : opacity->keys) {
+                const TimeValue t = static_cast<TimeValue>(
+                    (k.frame + static_cast<double>(startFrame)) * tpf + 0.5);
+                if (t > t0 && t < t1) {
+                    AppendVisKey(ik, t, static_cast<float>(k.value[0]));
+                }
+            }
+
+            AppendVisKey(ik, t1,
+                static_cast<float>(opacity->keys.back().value[0]));
+        } else {
+            // --- Fall 3: dabei, aber ohne Kurve ---
+            AppendVisKey(ik, t0, 1.0f);
+            AppendVisKey(ik, t1, 1.0f);
+        }
+
+        ++touched;
+    }
+
+    // AppendKey verlangt aufsteigende Zeiten. Der Sequenzmodus
+    // haelt das ein, aber wer eine Animation einzeln nachtraegt,
+    // haelt es nicht ein - dann bringt Sortieren die Spur wieder
+    // in Ordnung, statt sie stillschweigend zu verderben.
+    for (const SceneMesh& m : sceneMeshes_) {
+        INode* node = ip->GetINodeByHandle(m.handle);
+        if (node == nullptr) continue;
+        Control* vc = node->GetVisController();
+        if (vc == nullptr) continue;
+        IKeyControl* ik = GetKeyControlInterface(vc);
+        if (ik != nullptr) ik->SortKeys();
+    }
+
+    wchar_t buf[192];
+    swprintf_s(buf, L"buildVisibility '%s': %d Objekte, davon %d ausgeblendet",
+               Cp932ToWide(anm.name).c_str(), touched, hidden);
+    Log(buf);
+
+    return touched;
+}
+
+
+
+// ------------------------------------------------------------
+//  Material-Animationen
+//
+//  Die Datei animiert je Material achtzehn Groessen. In den
+//  Testdaten sind fast alle davon einwertig, also konstant;
+//  bewegt werden der Offset der ersten UV-Ebene und die
+//  Deckkraft - klassisches UV-Scrollen fuer Augen, Haare und
+//  Effektflaechen.
+//
+//  Uebertragen wird, was in Max eine Entsprechung hat:
+//
+//    U0/V0 Offset -> Offset der Bitmap (StdUVGen)
+//    U0/V0 Scale  -> Kachelung der Bitmap
+//    Alpha        -> Deckkraft des Materials
+//
+//  Nicht uebertragen, weil es dafuer nichts Entsprechendes
+//  gibt: Glare, Falloff, BlendRate, OutlineID - das sind
+//  Groessen des Shaders der Spiel-Engine. Sie werden gezaehlt
+//  und gemeldet, damit klar ist, dass sie da sind und nicht
+//  ankommen.
+//
+//  ------------------------------------------------------------
+//  DAS VORZEICHEN VON V
+//  ------------------------------------------------------------
+//  Beim Import der Meshes wird die V-Achse gespiegelt (1-v),
+//  weil Max die Textur andersherum aufzieht. Ein Versatz von
+//  +dv in der Datei ist danach ein Versatz von -dv in Max:
+//
+//      v_max  = 1 - v_datei
+//      v_max' = 1 - (v_datei + dv) = v_max - dv
+//
+//  Also wird der V-Offset negiert. Die Kachelung bleibt, wie
+//  sie ist - bei einer gespiegelten Achse ist eine Skalierung
+//  nicht mehr sauber uebertragbar, und in den Testdaten ist sie
+//  ohnehin konstant.
+// ------------------------------------------------------------
+int XfbinImportInterface::BuildMaterialAnim(int index, float startFrame,
+                                            float endFrame) {
+    if (!RequireAnims(L"buildMaterialAnim")) return 0;
+    if (index < 0 || index >= static_cast<int>(anims_.size())) return 0;
+    if (sceneMaterials_.empty()) return 0;
+
+    Interface* ip = GetCOREInterface();
+    if (ip == nullptr) return 0;
+
+    const xfbin::Anm& anm = anims_[static_cast<size_t>(index)];
+    const int tpf = GetTicksPerFrame();
+
+    HoldSuspendGuard holdGuard;
+
+    int keysSet  = 0;
+    int skipped  = 0;
+
+    SuspendAnimate();
+    AnimateOn();
+
+    for (const xfbin::AnmEntry& e : anm.entries) {
+        if (e.entryFormat != xfbin::kEntryMaterial) continue;
+
+        auto it = sceneMaterials_.find(e.targetName);
+        if (it == sceneMaterials_.end()) continue;
+
+        Mtl* mtl = it->second;
+        if (mtl == nullptr) continue;
+
+        // Die Bitmap der Farbkarte - dort sitzen Offset und
+        // Kachelung.
+        StdUVGen* uvgen = nullptr;
+        Texmap* tm = mtl->GetSubTexmap(ID_DI);
+        if (tm != nullptr && tm->ClassID() == Class_ID(BMTEX_CLASS_ID, 0)) {
+            BitmapTex* bmt = static_cast<BitmapTex*>(tm);
+            UVGen* g = bmt->GetUVGen();
+            if (g != nullptr && g->IsStdUVGen()) {
+                uvgen = static_cast<StdUVGen*>(g);
+            }
+        }
+
+        StdMat2* std2 = nullptr;
+        if (mtl->ClassID() == Class_ID(DMTL_CLASS_ID, 0)) {
+            std2 = static_cast<StdMat2*>(mtl);
+        }
+
+        for (const xfbin::AnmCurve& c : e.curves) {
+            const xfbin::AnmMaterialChannel ch =
+                xfbin::MaterialChannelOf(c.curveIndex);
+
+            // Einwertige Kurven sind konstant - dafuer braucht es
+            // keine Keys ueber die ganze Sequenz.
+            const bool constant = (c.keys.size() <= 1);
+
+            for (const xfbin::AnmKey& k : c.keys) {
+                if (k.count < 1) continue;
+
+                const TimeValue t = static_cast<TimeValue>(
+                    (k.frame + static_cast<double>(startFrame)) * tpf + 0.5);
+
+                const float v = static_cast<float>(k.value[0]);
+
+                switch (ch) {
+                case xfbin::kMatU0Offset:
+                    if (uvgen) { uvgen->SetUOffs(v, t); ++keysSet; }
+                    break;
+                case xfbin::kMatV0Offset:
+                    if (uvgen) { uvgen->SetVOffs(-v, t); ++keysSet; }
+                    break;
+                case xfbin::kMatU0Scale:
+                    if (uvgen) { uvgen->SetUScl(v, t); ++keysSet; }
+                    break;
+                case xfbin::kMatV0Scale:
+                    if (uvgen) { uvgen->SetVScl(v, t); ++keysSet; }
+                    break;
+                case xfbin::kMatAlpha:
+                    if (std2) { std2->SetOpacity(v, t); ++keysSet; }
+                    break;
+                default:
+                    if (!constant) ++skipped;
+                    break;
+                }
+            }
+        }
+    }
+
+    AnimateOff();
+    ResumeAnimate();
+
+    if (skipped > 0) {
+        wchar_t wbuf[256];
+        swprintf_s(wbuf, L"%d animierte Materialkurven ohne Entsprechung in Max "
+                         L"(Glare, Falloff, BlendRate, OutlineID) - ausgelassen.",
+                   skipped);
+        AddWarning(wbuf);
+    }
+
+    return keysSet;
+}
+
+// ------------------------------------------------------------
+//  Zuordnung Knoten -> Clump, als Text
+//
+//  Damit kann MaxScript die Layer bauen. Absichtlich nicht in
+//  C++: die Layerverwaltung heisst dort ILayerManager und
+//  ILayerProperties und ist umstaendlich, waehrend es in
+//  MaxScript zwei benannte Aufrufe sind. Dieselbe Ueberlegung
+//  wie bei der Bone-Groesse und beim Material-Editor.
+//
+//  Eine Zeile je Knoten:
+//
+//      <clump> TAB <instanz> TAB bone|mesh TAB <handle>
+// ------------------------------------------------------------
+const MCHAR* XfbinImportInterface::GetLayerReport() {
+    scratch_.clear();
+
+    std::wostringstream o;
+
+    for (size_t ci = 0; ci < sceneClumps_.size(); ++ci) {
+        if (ci >= boneHandles_.size()) break;
+
+        const std::wstring cname = Cp932ToWide(sceneClumps_[ci].name);
+        const int inst = (ci < sceneInstance_.size()) ? sceneInstance_[ci] : 0;
+
+        for (ULONG h : boneHandles_[ci]) {
+            if (h == 0) continue;
+            o << cname << L"\t" << inst << L"\tbone\t" << h << L"\n";
+        }
+    }
+
+    for (const SceneMesh& m : sceneMeshes_) {
+        if (m.handle == 0) continue;
+        o << Cp932ToWide(m.clumpName) << L"\t" << m.instance
+          << L"\tmesh\t" << m.handle << L"\n";
+    }
+
+    scratch_ = o.str();
+    return scratch_.c_str();
+}
+
 // ------------------------------------------------------------
 //  Clump-Name der geoeffneten Datei
 //
@@ -2166,11 +2694,12 @@ const MCHAR* XfbinImportInterface::GetFileClumpName() {
 //  ueber alle Animationen, damit auch eine Animation bedient ist,
 //  die als einzige beide Exemplare bewegt.
 // ------------------------------------------------------------
-int XfbinImportInterface::RequiredInstances(const MCHAR* clumpName) {
-    if (!RequireAnims(L"requiredInstances")) return 1;
-
-    const std::string want = WideToUtf8(SafeStr(clumpName));
+// Ohne Umweg ueber MCHAR - so kann buildSkeletonN die Zahl je
+// Clump selbst bestimmen, statt sie von aussen gereicht zu
+// bekommen.
+int XfbinImportInterface::RequiredInstancesRaw(const std::string& want) {
     if (want.empty()) return 1;
+    if (anims_.empty()) return 1;
 
     int best = 1;
     for (const xfbin::Anm& a : anims_) {
@@ -2181,6 +2710,11 @@ int XfbinImportInterface::RequiredInstances(const MCHAR* clumpName) {
         if (n > best) best = n;
     }
     return best;
+}
+
+int XfbinImportInterface::RequiredInstances(const MCHAR* clumpName) {
+    if (!RequireAnims(L"requiredInstances")) return 1;
+    return RequiredInstancesRaw(WideToUtf8(SafeStr(clumpName)));
 }
 
 // ------------------------------------------------------------
@@ -2305,6 +2839,16 @@ int XfbinImportInterface::BuildBindPoseKey(float frame) {
         }
     }
 
+    // In der Ruhelage ist alles sichtbar. Ohne einen Key hier
+    // haette der erste Sichtbarkeits-Key der ersten Sequenz
+    // keinen Vorgaenger, und Max zoege seinen Wert bis Frame 0
+    // zurueck - dann waere schon die Ausgangslage falsch.
+    for (const SceneMesh& m : sceneMeshes_) {
+        INode* mn = ip->GetINodeByHandle(m.handle);
+        if (mn == nullptr) continue;
+        AppendVisKey(GetVisKeys(mn), t, 1.0f);
+    }
+
     AnimateOff();
     ResumeAnimate();
 
@@ -2350,6 +2894,8 @@ int XfbinImportInterface::ClearScene() {
     sceneClumps_.clear();
     sceneInstance_.clear();
     boneHandles_.clear();
+    sceneMeshes_.clear();
+    sceneMaterials_.clear();
     Log(L"clearScene: Szenenzustand vergessen");
     return had;
 }
@@ -2669,7 +3215,7 @@ int XfbinImportInterface::BuildMaterials(const MCHAR* directory) {
     // Ein Material kann von mehreren Modellen benutzt werden -
     // in dieser Datei teilen sich acht Modelle das Material
     // "1hakbody1". Also einmal bauen, dann wiederverwenden.
-    std::map<std::string, Mtl*> byName;
+    std::map<std::string, Mtl*>& byName = sceneMaterials_;
 
     int assigned = 0;
     int missing  = 0;
