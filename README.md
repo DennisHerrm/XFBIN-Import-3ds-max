@@ -30,11 +30,16 @@ Built on the format research of the
 | **Skinning** | Skin modifier with per-vertex weights, applied through `ISkinImportData` |
 | **Textures** | NUT textures written out as DDS and wired into Standard materials |
 | **Animations** | All 23 curve formats, quantised values, per-bone keys |
-| **Accessories** | Weapons and props from separate files, including multiple instances of the same model |
-| **Sequence mode** | All animations on one timeline with note tracks — the layout Warcraft 3 tools expect |
+| **Material animation** | UV offset, tiling and opacity — the UV scrolling on eyes, hair and effect surfaces |
+| **Visibility** | Driven by the opacity channel, as step keys, per model and per sequence |
+| **Accessories** | Weapons and props from separate files, including several instances of the same model |
+| **Several animation files** | A character often has four or more; all of them are read |
+| **Layers** | One layer per model for its meshes, one for its bones |
+| **Sequence mode** | Every animation on one timeline with note tracks — the layout Warcraft 3 tools expect |
 
-Everything runs in C++. A character with **222 bones**, **22,600
-vertices** and **72,800 keyframes** loads in well under a second.
+Everything runs in C++. A character with **1,793 bones**, seventeen
+skeletons and **813,000 keyframes** across 104 animations loads in a
+few seconds.
 
 ---
 
@@ -111,7 +116,7 @@ exactly like this:
 Start 3ds Max. The Listener should show:
 
 ```
-XFBIN Import 1.5.2: Plugin geladen, Menue-Callback angemeldet.
+XFBIN Import 1.9.2: Plugin geladen, Menue-Callback angemeldet.
 ```
 
 ---
@@ -172,28 +177,60 @@ animations, and often accessories such as weapons. So you pick the
 | Clear scene first | off | Handy while iterating |
 | Import textures | on | Writes DDS and builds materials |
 | Fill Material Editor | on | Puts the materials into the Compact Material Editor slots |
+| Sort into layers | on | One layer per model for meshes, one for bones |
 | Skip LOD | on | Skips models whose name contains `_lod` |
 | Explicit normals | on | Keeps the cel-shading normals instead of letting Max recompute them |
 | Skin modifier | on | Turn off for geometry and rig without skinning |
-| Bone size | `0` | Bone objects render as bare lines; takes effect immediately |
+| Bone size | `0` | Bone objects render as bare lines |
 | Scale | `1.0` | The file is in centimetres — use `0.01` for metres |
+
+Options for the animation itself:
+
+| Option | Default | Notes |
+| :--- | :---: | :--- |
+| Create note track | on | Names the sequences on the scene root |
+| Rest keys | on | Keys at both ends for bones the animation does not touch |
+| Visibility | on | On/off keys per model, per sequence |
+| Material anim | on | UV offset, tiling and opacity |
+| Gap | `10` | Frames between two sequences |
 
 ### Sequence mode
 
-**Load all as sequence** builds a single timeline:
+**Load all as sequence** builds a single timeline out of every
+animation in the folder:
 
 - Frame 0 holds the **bind pose** as a key, so an exporter finds a
   defined starting point.
 - Every animation follows in turn, separated by an adjustable gap.
-- A note track named `animations` goes on the scene root, with a key at
-  the start and end of each sequence carrying its name.
-- **Rest keys** writes bind-pose keys at both ends of a sequence for
-  every bone that animation does not touch. Without them Max
-  interpolates across the gap and one animation bleeds into the next —
-  a typical animation only moves about half the skeleton.
+- A note track named `animations` goes on the scene root, with a key
+  at the start and end of each sequence carrying its name.
+
+Two things make each sequence stand on its own — without them one
+animation bleeds into the next:
+
+**Rest keys.** A typical animation only moves about half the skeleton.
+Bones it does not touch get a bind-pose key at both ends of the
+sequence, so Max has nothing to interpolate across.
+
+**Visibility.** Every mesh gets an on/off key at the start and the end
+of *every* sequence — including the ones where nothing happens at all.
+Three cases are distinguished, the same three the Warcraft 3 tools
+expect:
+
+| Situation | Result |
+| :--- | :--- |
+| The animation never mentions this model | invisible for the whole sequence |
+| Its mesh bone has an opacity curve | that curve, including changes mid-animation |
+| It is present but has no curve | visible, with a key at both ends |
+
+The keys are written as **step keys** — a weapon is either there or it
+is not, and Warcraft 3 has no half-visible object either.
 
 > [!TIP]
-> This is the layout the Warcraft 3 exporters read.
+> `tools/VIS_CHECK.ms` walks every mesh against every sequence and
+> reports any place where those keys are missing. At 632 meshes and
+> 104 sequences that is about 65,000 pairs — not something to check by
+> eye.
 
 ---
 
@@ -248,19 +285,41 @@ The exported DDS files are **byte-identical** to the ones the Python
 library writes, header included.
 
 `tools/VERGLEICHE_*.bat` run these comparisons on your own machine.
-`tools/PRUEFE_SCRIPTS.py` lints the MaxScript files for the four
-mistakes that actually happened during development — non-ASCII
-characters, C-style comments, unbalanced brackets and forward
-references.
+
+Four more checks run before every release, and none of them needs
+3ds Max:
+
+| Tool | Checks |
+| :--- | :--- |
+| `PRUEFE_SCRIPTS.py` | the MaxScript files: non-ASCII, C-style comments, bracket balance, forward references, handlers for controls that do not exist, calls to plugin functions that do not exist, and `continue` (which MAXScript does not have) |
+| `PRUEFE_API.py` | that every plugin function is registered in all three places — enum, function map and interface descriptor |
+| `PRUEFE_INCLUDES.py` | that every `std` type a file uses has its header included |
+| `VERSION_SETZEN.py` | sets all six version places at once and reads them back |
+
+Each of these exists because the corresponding mistake actually
+happened during development and cost a build.
+
+Three scripts help check the result inside Max:
+
+| Script | Shows |
+| :--- | :--- |
+| `NOTE_CHECK.ms` | the note tracks on the scene root, with sequence names and times |
+| `VIS_CHECK.ms` | whether every mesh has at least two visibility keys in every sequence |
+| `BONE_CHECK.ms` | the bone matrices and the bind matrices stored in the Skin modifier |
 
 ---
 
 ## Known limitations
 
-- Material animations (UV scroll, glare, blend) are parsed but not
-  applied.
+- Shader-only material values — glare, falloff, blend rate, outline ID
+  — are parsed but have no 3ds Max equivalent. They are reported
+  rather than applied. UV offset, tiling and opacity are applied.
+- Trail and particle chunks (`nuccChunkTrail`, `nuccChunkParticle`)
+  are not imported. A few effect ribbons are driven by them and
+  therefore have no visibility data of their own; they stay visible.
 - Of the seven NUT pixel formats, two are verified against real data
   (R5G6B5 and DXT1). The others are implemented but untested.
+- Camera and light entries are parsed and named, but not applied.
 - Import only — there is no exporter yet.
 - CPK-compressed XFBIN files are detected and rejected with a clear
   message rather than unpacked.
