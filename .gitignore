@@ -1,0 +1,30 @@
+# Local agent / env scratch
+_env_check.txt
+_sdk_search.txt
+_build_install_status.txt
+*.user
+.vs/
+
+# Codegraph local index
+**/.codegraph/
+
+# CMake / VS build trees
+XFBIN Import/build_*/
+XFBIN Import/build_tool/
+XFBIN Import/output/
+**/CMakeCache.txt
+**/CMakeFiles/
+**/cmake_install.cmake
+**/*.vcxproj.user
+**/x64/
+**/Release/
+**/Debug/
+
+# INSTALLIERE staging (Contents populated from output+scripts)
+# Keep PackageContents.xml tracked; do not ignore root XfbinImport/ published package
+XFBIN Import/package/XfbinImport/Contents/
+
+# Build logs
+XFBIN Import/*.log
+XFBIN Import/build_*_configure.log
+XFBIN Import/build_*_build.log
