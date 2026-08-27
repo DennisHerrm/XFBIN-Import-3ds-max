@@ -1,5 +1,57 @@
 # Changelog
 
+## 1.9.3 - Kabuto spl1 Sequenz-Crash und Re-Import-Crash
+
+### Bug 1: `2kbxspl1.xfbin` knallt bei "Load all as sequence"
+
+Special-Move-Dateien liefern neben Skelett-Clips auch Post-Process-
+Tracks (Blur, Glare, DOF, ColorFilter, Shadow, ...). Die haben oft
+**keine Bone-Eintraege**. Die Sequenz hat sie trotzdem wie normale
+Animationen behandelt - Visibility hat dann alle Meshes versteckt
+bzw. Material-Ziele angesprochen, die in der Max-Szene nicht
+existieren. Folge: ACCESS_VIOLATION / STATUS_INVALID_PARAMETER.
+
+Fix:
+- neue API `animIsSkeletal <index>` (1 = hat Bone-Eintraege)
+- `buildAnimAt` / `buildIdleKeys` / `buildVisibility` /
+  `buildMaterialAnim` machen bei Nicht-Skelett-Clips sofort 0
+- die Sequenz in `XfbinImport.mcr` ueberspringt solche Clips
+  (bleiben in der Dropdown-Liste zur Einsicht)
+
+### Bug 2: Zweiter Import crasht in `buildMaterials`
+
+`clearScene()` vergass `meshNodes_` und wurde nur bei gesetztem
+Haken "Clear scene first" aufgerufen. Nach `delete objects` zeigten
+`sceneMaterials_`-Eintraege noch auf tote `Mtl*`-Zeiger - der
+naechste `buildMaterials` las Adresse 0.
+
+Fix:
+- `clearScene()` leert jetzt auch `meshNodes_`
+- Import ruft `clearScene()` **immer** zu Beginn auf (vor
+  `delete objects`), und nochmals nach dem Loeschen
+- `buildMaterials` speichert keine Null-Materialien mehr
+
+### Hybrid-Dateien (Clump + Anm)
+
+Kabuto-Dateien wie `2kbxbod1c/l/s` und `2kbxspl1` tragen Modell und
+Animation im selben XFBIN. `ScanFolder` hat sie nur als Modelle
+gezaehlt (`else if`) - ihre Animationen kamen nie in
+`parseAnimsAppend`. Ab 1.9.3 zaehlen unabhaengige `if`s: Clump ->
+Modelliste, Anm -> Animliste (Datei kann in beiden stehen).
+
+### Neu
+
+| API | Bedeutung |
+|-----|-----------|
+| `animIsSkeletal <index>` | 1 wenn der Clip Bone-Keys hat |
+
+### Version
+
+AppVersion / FriendlyVersion / SchemaVersion -> 1.9.3, neuer
+ProductCode. UpgradeCode unveraendert.
+
+---
+
 ## 1.9.2 - Sichtbarkeits-Keys entstehen jetzt wirklich
 
 ### Warum viele Sequenzen keine hatten

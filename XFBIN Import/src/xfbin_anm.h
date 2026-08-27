@@ -204,6 +204,13 @@ struct Anm {
     std::vector<AnmEntry>       entries;
 
     size_t KeyframeCount() const;
+
+    // Mindestens ein Bone-Eintrag? Post-process-/Kamera-/Licht-only
+    // Clips (Blur, Glare, DOF, ColorFilter, ...) haben oft keine und
+    // duerfen in der Sequenz nicht wie Skelett-Animationen behandelt
+    // werden - sonst knallt buildMaterialAnim/buildVisibility an
+    // Zielen, die in der Max-Szene nicht existieren.
+    bool HasBoneEntries() const;
 };
 
 bool ParseAnims(const XfbinFile& file, std::vector<Anm>& out,

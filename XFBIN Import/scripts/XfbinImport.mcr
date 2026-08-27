@@ -1,12 +1,16 @@
 -- ============================================================
 --  XfbinImport.mcr - user interface for the XFBIN Import plugin
---  Version 1.9.2
+--  Version 1.9.3
 --
 --  Three steps:
 --    1. pick the FOLDER holding the .xfbin files
 --    2. Import - bones, meshes, skinning, textures in one go
 --    3. either apply a single animation, or load them all as a
 --       sequence with a note track
+--
+--  1.9.3: hybrid files (clump+anm) also feed the anim list;
+--  sequence skips non-skeletal clips; import always clears
+--  plugin scene state before building.
 --
 --  ------------------------------------------------------------
 --  LAYOUT RULES kept here
@@ -357,14 +361,19 @@ macroScript XfbinImport_Open
           local iClump = XfbinCpp.countOfType "nuccChunkClump"
           local iAnm   = XfbinCpp.countOfType "nuccChunkAnm"
 
+          -- Unabhaengig, nicht else-if: viele Charakter-Dateien
+          -- (Kabuto 2kbxbod1c/l/s, 2kbxspl1, ...) tragen Clump UND
+          -- Anm im selben XFBIN. Nur als Modell zu zaehlen hiess,
+          -- ihre Animationen nie ueber parseAnimsAppend zu laden.
           if (iClump > 0) then
           (
             append aModelFiles f
-          )
-          else if (iAnm > 0) then
+          ) -- end of clump check
+
+          if (iAnm > 0) then
           (
             append aAnimFiles f
-          ) -- end of type check
+          ) -- end of anm check
         ) -- end of open check
       ) -- end of file loop
 
@@ -508,6 +517,11 @@ macroScript XfbinImport_Open
 
     on btnImport pressed do
     (
+      -- Plugin-Zustand ZUERST vergessen, bevor Max die Knoten
+      -- loescht: sonst zeigen sceneMaterials_ noch auf Mtl*-
+      -- Zeiger, die delete objects gleich ungueltig macht.
+      XfbinCpp.clearScene()
+
       if (chkClear.checked) then
       (
         delete objects
@@ -542,6 +556,7 @@ macroScript XfbinImport_Open
       --  ALL animation files are loaded, not just one. Pein
       --  brings four of them, together 104 animations, and they
       --  address seventeen different skeletons between them.
+      --  Hybrid files (clump+anm) are in BOTH lists since 1.9.3.
       -- ------------------------------------------------------
       local iAnims = 0
       XfbinCpp.clearAnims()
@@ -584,7 +599,18 @@ macroScript XfbinImport_Open
             local sTexDir = (getFilenamePath f) + "textures"
             makeDir sTexDir all:true
             iTex += XfbinCpp.exportTextures sTexDir
-            XfbinCpp.buildMaterials sTexDir
+            -- ACCESS_VIOLATION in der DLU faengt MaxScript nicht
+            -- zuverlaessig ab; clearScene oben ist die eigentliche
+            -- Absicherung. try/catch fangt nur MAXScript-Fehler.
+            try
+            (
+              XfbinCpp.buildMaterials sTexDir
+            )
+            catch
+            (
+              format "[XFBIN] buildMaterials failed: %\n" \
+                     (getCurrentException())
+            ) -- end of try/catch
           ) -- end of texture check
 
           ShowWarnings()
@@ -709,50 +735,70 @@ macroScript XfbinImport_Open
 
         try
         (
+          local iSkipped = 0
+
           for i = 0 to (iCount - 1) do
           (
             progressUpdate (100.0 * (i + 1) / iCount)
 
-            local fLen = XfbinCpp.animFrames i
-
-            -- Every sequence must stand on its own. A typical
-            -- animation only touches 112 of the 222 character
-            -- bones, and some do not touch the weapons at all.
-            -- Without a key at both ends those bones have no key
-            -- inside the sequence at all, and Max interpolates
-            -- straight across the gap - the previous animation
-            -- bleeds into the next one.
-            if (chkIdle.checked) then
+            -- Post-process clips (Blur, Glare, DOF, ColorFilter, ...)
+            -- have no bone entries. Sequencing them hid every mesh
+            -- or poked missing material targets - crash on Kabuto
+            -- 2kbxspl1. Keep them in the dropdown for inspection,
+            -- but do not put them on the timeline.
+            if ((XfbinCpp.animIsSkeletal i) == 0) then
             (
-              XfbinCpp.buildIdleKeys i fAt (fAt + fLen)
-            ) -- end of idle check
-
-            -- Objects belonging to a model this animation never
-            -- mentions are hidden for its stretch of the
-            -- timeline. Without it every summoned creature
-            -- stands around in all 104 sequences.
-            if (chkVis.checked) then
+              iSkipped += 1
+            )
+            else
             (
-              XfbinCpp.buildVisibility i fAt (fAt + fLen)
-            ) -- end of visibility check
+              local fLen = XfbinCpp.animFrames i
 
-            -- UV offset, tiling and opacity of the materials.
-            -- In this data it is mostly UV scrolling on eyes,
-            -- hair and effect surfaces.
-            if (chkMatAnim.checked) then
-            (
-              iKeys += XfbinCpp.buildMaterialAnim i fAt (fAt + fLen)
-            ) -- end of material check
+              -- Every sequence must stand on its own. A typical
+              -- animation only touches 112 of the 222 character
+              -- bones, and some do not touch the weapons at all.
+              -- Without a key at both ends those bones have no key
+              -- inside the sequence at all, and Max interpolates
+              -- straight across the gap - the previous animation
+              -- bleeds into the next one.
+              if (chkIdle.checked) then
+              (
+                XfbinCpp.buildIdleKeys i fAt (fAt + fLen)
+              ) -- end of idle check
 
-            iKeys += XfbinCpp.buildAnimAt i fAt 7 spnScale.value
+              -- Objects belonging to a model this animation never
+              -- mentions are hidden for its stretch of the
+              -- timeline. Without it every summoned creature
+              -- stands around in all 104 sequences.
+              if (chkVis.checked) then
+              (
+                XfbinCpp.buildVisibility i fAt (fAt + fLen)
+              ) -- end of visibility check
 
-            if (NT != undefined) then
-            (
-              AddNoteKeys NT (XfbinCpp.animName i) fAt (fAt + fLen)
-            ) -- end of note check
+              -- UV offset, tiling and opacity of the materials.
+              -- In this data it is mostly UV scrolling on eyes,
+              -- hair and effect surfaces.
+              if (chkMatAnim.checked) then
+              (
+                iKeys += XfbinCpp.buildMaterialAnim i fAt (fAt + fLen)
+              ) -- end of material check
 
-            fAt = fAt + fLen + iGap
+              iKeys += XfbinCpp.buildAnimAt i fAt 7 spnScale.value
+
+              if (NT != undefined) then
+              (
+                AddNoteKeys NT (XfbinCpp.animName i) fAt (fAt + fLen)
+              ) -- end of note check
+
+              fAt = fAt + fLen + iGap
+            ) -- end of skeletal check
           ) -- end of animation loop
+
+          if (iSkipped > 0) then
+          (
+            format "[XFBIN] Sequence: skipped % non-skeletal clip(s)\n" \
+                   iSkipped
+          ) -- end of skip log
         )
         catch
         (

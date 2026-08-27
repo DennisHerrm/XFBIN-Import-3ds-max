@@ -324,6 +324,13 @@ size_t Anm::KeyframeCount() const {
     return n;
 }
 
+bool Anm::HasBoneEntries() const {
+    for (const AnmEntry& e : entries) {
+        if (e.entryFormat == kEntryBone) return true;
+    }
+    return false;
+}
+
 // ============================================================
 //  Parsen
 // ============================================================

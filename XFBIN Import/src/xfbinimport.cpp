@@ -145,6 +145,8 @@ static XfbinImportInterface theXfbinImportInterface(
         _T("scale"), 0, TYPE_FLOAT,
     fn_animFrames, _T("animFrames"), 0, TYPE_FLOAT, 0, 1,
         _T("index"), 0, TYPE_INT,
+    fn_animIsSkeletal, _T("animIsSkeletal"), 0, TYPE_INT, 0, 1,
+        _T("index"), 0, TYPE_INT,
     fn_buildBindPoseKey, _T("buildBindPoseKey"), 0, TYPE_INT, 0, 1,
         _T("frame"), 0, TYPE_FLOAT,
     fn_buildIdleKeys, _T("buildIdleKeys"), 0, TYPE_INT, 0, 3,
@@ -1889,6 +1891,11 @@ int XfbinImportInterface::BuildAnimAt(int index, float startFrame,
         SetError(L"buildAnim: Index ausserhalb des Bereichs.");
         return 0;
     }
+    // Post-process-/Kamera-only Clips (z.B. *_blur, *_glare aus
+    // 2kbxspl1) haben keine Bone-Eintraege - nichts zu keyen.
+    if (!anims_[static_cast<size_t>(index)].HasBoneEntries()) {
+        return 0;
+    }
     if (sceneClumps_.empty() || boneHandles_.empty()) {
         SetError(L"buildAnim: es steht kein Skelett in der Szene. "
                  L"Erst die Modelldatei oeffnen und Bones anlegen, dann "
@@ -2209,6 +2216,7 @@ int XfbinImportInterface::BuildIdleKeys(int index, float startFrame,
                                         float endFrame) {
     if (!RequireAnims(L"buildIdleKeys")) return 0;
     if (index < 0 || index >= static_cast<int>(anims_.size())) return 0;
+    if (!anims_[static_cast<size_t>(index)].HasBoneEntries()) return 0;
     if (sceneClumps_.empty() || boneHandles_.empty()) return 0;
 
     Interface* ip = GetCOREInterface();
@@ -2376,6 +2384,11 @@ int XfbinImportInterface::BuildVisibility(int index, float startFrame,
                                           float endFrame) {
     if (!RequireAnims(L"buildVisibility")) return 0;
     if (index < 0 || index >= static_cast<int>(anims_.size())) return 0;
+    // Ohne Bone-Eintraege wuerde present leer bleiben und ALLE
+    // Meshes fuer diesen Abschnitt unsichtbar - bei Blur/Glare-
+    // Clips aus spl1 genau der falsche Effekt, und unnoetige
+    // Keys belasten die Szene.
+    if (!anims_[static_cast<size_t>(index)].HasBoneEntries()) return 0;
     if (sceneMeshes_.empty()) return 0;
 
     Interface* ip = GetCOREInterface();
@@ -2533,6 +2546,7 @@ int XfbinImportInterface::BuildMaterialAnim(int index, float startFrame,
                                             float endFrame) {
     if (!RequireAnims(L"buildMaterialAnim")) return 0;
     if (index < 0 || index >= static_cast<int>(anims_.size())) return 0;
+    if (!anims_[static_cast<size_t>(index)].HasBoneEntries()) return 0;
     if (sceneMaterials_.empty()) return 0;
 
     Interface* ip = GetCOREInterface();
@@ -2726,6 +2740,12 @@ float XfbinImportInterface::AnimFrames(int index) {
     return static_cast<float>(anims_[static_cast<size_t>(index)].frameCount);
 }
 
+int XfbinImportInterface::AnimIsSkeletal(int index) {
+    if (!RequireAnims(L"animIsSkeletal")) return 0;
+    if (index < 0 || index >= static_cast<int>(anims_.size())) return 0;
+    return anims_[static_cast<size_t>(index)].HasBoneEntries() ? 1 : 0;
+}
+
 // ------------------------------------------------------------
 //  Name des Wurzel-Bones in der Szene
 //
@@ -2890,12 +2910,19 @@ int XfbinImportInterface::ClearScene() {
     // Loescht nur die Buchfuehrung, nicht die Knoten. Wer die
     // Knoten loeschen will, macht das in Max - hier waere es
     // eine Ueberraschung.
+    //
+    // Wichtig: auch meshNodes_ und sceneMaterials_ leeren.
+    // Nach "delete objects" sind die alten Mtl*-Zeiger und
+    // Mesh-Handles tot. Ein zweiter Import mit buildMaterials
+    // ohne diesen Reset endet in ACCESS_VIOLATION (Null-Deref
+    // auf verwaisten Materialzeigern).
     const int had = SceneBoneCount();
     sceneClumps_.clear();
     sceneInstance_.clear();
     boneHandles_.clear();
     sceneMeshes_.clear();
     sceneMaterials_.clear();
+    meshNodes_.clear();
     Log(L"clearScene: Szenenzustand vergessen");
     return had;
 }
@@ -3258,8 +3285,14 @@ int XfbinImportInterface::BuildMaterials(const MCHAR* directory) {
         for (const xfbin::RawString& mn : matNames) {
             auto it = byName.find(mn);
             if (it != byName.end()) {
-                subs.push_back(it->second);
-                continue;
+                // Verwaiste Zeiger nach Scene-Clear/delete objects
+                // nicht wiederverwenden. clearScene() leert die Map,
+                // aber zur Sicherheit auch hier null pruefen.
+                if (it->second != nullptr) {
+                    subs.push_back(it->second);
+                    continue;
+                }
+                byName.erase(it);
             }
 
             // Textur des Materials suchen und die dazu
@@ -3295,6 +3328,11 @@ int XfbinImportInterface::BuildMaterials(const MCHAR* directory) {
             }
 
             Mtl* built = MakeStandardMaterial(ip, Cp932ToWide(mn), mapFile);
+            if (built == nullptr) {
+                AddWarning(L"buildMaterials: CreateInstance fuer Standardmaterial "
+                           L"fehlgeschlagen.");
+                continue;
+            }
             byName[mn] = built;
             subs.push_back(built);
         }
