@@ -59,8 +59,12 @@
 //        Sequenzmodus, der alle Animationen hintereinanderlegt.
 //    XfbinCpp.animFrames  <index>             -> float  Laenge in Frames
 //    XfbinCpp.animIsSkeletal <index>          -> int
-//        1 = Clip hat Bone-Keys (gehoert in die Sequenz).
-//        0 = nur Kamera/Licht/Material/Post-Process (Blur, Glare, ...).
+//        1 = Clip hat Bone-Keys.
+//        0 = keine Bone-Keys (nur Kamera/Licht/Material/...).
+//    XfbinCpp.animIsSequenceSafe <index>      -> int
+//        1 = darf in "Load all as sequence" (Bones, kein
+//        Cinematic-/FX-Bundle wie 2kbxspl1).
+//        0 = ueberspringen; Einzelanwenden bleibt moeglich.
 //    XfbinCpp.buildBindPoseKey <frame>        -> int    Bones mit Key
 //    XfbinCpp.buildIdleKeys <index> <start> <end> -> int
 //        Ruhelage-Keys an beiden Enden fuer alles, was diese
@@ -160,7 +164,7 @@
 #define XFBINIMPORT_CLASS_ID     Class_ID(0x2C614F13, 0x5A0D7B22)
 #define XFBINIMPORT_INTERFACE_ID Interface_ID(0x2C614F13, 0x5A0D7B23)
 
-#define XFBINIMPORT_VERSION_STR  _T("1.9.3")
+#define XFBINIMPORT_VERSION_STR  _T("1.9.4")
 
 // ============================================================
 //  Function IDs
@@ -210,6 +214,7 @@ enum XfbinImportFnID {
     fn_buildAnimAt,
     fn_animFrames,
     fn_animIsSkeletal,
+    fn_animIsSequenceSafe,
     fn_buildBindPoseKey,
     fn_buildIdleKeys,
     fn_buildVisibility,
@@ -325,6 +330,7 @@ public:
              TYPE_INT, TYPE_FLOAT, TYPE_INT, TYPE_FLOAT)
         FN_1(fn_animFrames,   TYPE_FLOAT,  AnimFrames,    TYPE_INT)
         FN_1(fn_animIsSkeletal, TYPE_INT,  AnimIsSkeletal, TYPE_INT)
+        FN_1(fn_animIsSequenceSafe, TYPE_INT, AnimIsSequenceSafe, TYPE_INT)
         FN_1(fn_buildBindPoseKey, TYPE_INT, BuildBindPoseKey, TYPE_FLOAT)
         FN_3(fn_buildIdleKeys, TYPE_INT, BuildIdleKeys,
              TYPE_INT, TYPE_FLOAT, TYPE_FLOAT)
@@ -399,9 +405,10 @@ public:
     int BuildAnimEx(int index, int channelMask, float scale);
     int BuildAnimAt(int index, float startFrame, int channelMask, float scale);
     float AnimFrames(int index);
-    // 1 = Clip hat Bone-Keys und gehoert in die Sequenz.
-    // 0 = nur Kamera/Licht/Material/Post-Process (Blur, Glare, ...).
+    // 1 = Clip hat Bone-Keys.
     int AnimIsSkeletal(int index);
+    // 1 = sicher fuer Sequenzmodus (Bones, kein Cinematic-Bundle).
+    int AnimIsSequenceSafe(int index);
     int BuildBindPoseKey(float frame);
     int BuildIdleKeys(int index, float startFrame, float endFrame);
     int BuildVisibility(int index, float startFrame, float endFrame);

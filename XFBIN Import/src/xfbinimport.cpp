@@ -147,6 +147,8 @@ static XfbinImportInterface theXfbinImportInterface(
         _T("index"), 0, TYPE_INT,
     fn_animIsSkeletal, _T("animIsSkeletal"), 0, TYPE_INT, 0, 1,
         _T("index"), 0, TYPE_INT,
+    fn_animIsSequenceSafe, _T("animIsSequenceSafe"), 0, TYPE_INT, 0, 1,
+        _T("index"), 0, TYPE_INT,
     fn_buildBindPoseKey, _T("buildBindPoseKey"), 0, TYPE_INT, 0, 1,
         _T("frame"), 0, TYPE_FLOAT,
     fn_buildIdleKeys, _T("buildIdleKeys"), 0, TYPE_INT, 0, 3,
@@ -1995,6 +1997,15 @@ int XfbinImportInterface::BuildAnimAt(int index, float startFrame,
                     (k.frame + static_cast<double>(startFrame))
                     * static_cast<double>(tpf) + 0.5);
 
+                // NaN/Inf knallen in Max/ucrtbase mit
+                // STATUS_INVALID_PARAMETER - einfach ueberspringen.
+                if (!std::isfinite(k.frame)) continue;
+                bool finite = true;
+                for (int vi = 0; vi < k.count && vi < 4; ++vi) {
+                    if (!std::isfinite(k.value[vi])) { finite = false; break; }
+                }
+                if (!finite) continue;
+
                 if (ch == xfbin::kChannelLocation && k.count >= 3 && posCtrl &&
                     (channelMask & 1)) {
                     Point3 p(static_cast<float>(k.value[0]) * scale,
@@ -2599,6 +2610,7 @@ int XfbinImportInterface::BuildMaterialAnim(int index, float startFrame,
 
             for (const xfbin::AnmKey& k : c.keys) {
                 if (k.count < 1) continue;
+                if (!std::isfinite(k.frame) || !std::isfinite(k.value[0])) continue;
 
                 const TimeValue t = static_cast<TimeValue>(
                     (k.frame + static_cast<double>(startFrame)) * tpf + 0.5);
@@ -2744,6 +2756,12 @@ int XfbinImportInterface::AnimIsSkeletal(int index) {
     if (!RequireAnims(L"animIsSkeletal")) return 0;
     if (index < 0 || index >= static_cast<int>(anims_.size())) return 0;
     return anims_[static_cast<size_t>(index)].HasBoneEntries() ? 1 : 0;
+}
+
+int XfbinImportInterface::AnimIsSequenceSafe(int index) {
+    if (!RequireAnims(L"animIsSequenceSafe")) return 0;
+    if (index < 0 || index >= static_cast<int>(anims_.size())) return 0;
+    return anims_[static_cast<size_t>(index)].IsSequenceSafe() ? 1 : 0;
 }
 
 // ------------------------------------------------------------

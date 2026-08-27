@@ -48,7 +48,7 @@ setQuatMode setBoneSize
 sceneBoneCount sceneClumpName clearScene sceneReport layerReport buildMaterialAnim
 parseTextures textureCount materialCount textureSummary exportTextures
 buildMaterials
-buildAnimAt animFrames animIsSkeletal buildBindPoseKey buildIdleKeys buildVisibility
+buildAnimAt animFrames animIsSkeletal animIsSequenceSafe buildBindPoseKey buildIdleKeys buildVisibility
 sceneRootName
 fileClumpName requiredInstances buildSkeletonN buildMeshesN buildIdleKeys
 """.split())

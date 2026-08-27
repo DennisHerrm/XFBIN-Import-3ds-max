@@ -331,6 +331,75 @@ bool Anm::HasBoneEntries() const {
     return false;
 }
 
+bool Anm::HasCameraOrLightEntries() const {
+    for (const AnmEntry& e : entries) {
+        switch (e.entryFormat) {
+        case kEntryCamera:
+        case kEntryLightDirc:
+        case kEntryLightPoint:
+        case kEntryAmbient:
+            return true;
+        default:
+            break;
+        }
+    }
+    return false;
+}
+
+bool Anm::IsSequenceSafe() const {
+    if (!HasBoneEntries()) return false;
+    if (cinematicSource) return false;
+    if (HasCameraOrLightEntries()) return false;
+    return true;
+}
+
+namespace {
+
+// Special-move Bundles (z.B. 2kbxspl1) mischen Skelett-Clips mit
+// Kamera/Licht und Binary-FCVs fuer Blur/Glare/DOF. Die Anm-Clips
+// haben Bones - HasBoneEntries reicht deshalb nicht als Filter.
+bool FileLooksCinematic(const XfbinFile& file) {
+    auto nameLooksPostProcess = [](const RawString& name) -> bool {
+        std::string lower;
+        lower.reserve(name.size());
+        for (unsigned char c : name) {
+            lower.push_back(static_cast<char>(
+                (c >= 'A' && c <= 'Z') ? (c - 'A' + 'a') : c));
+        }
+        static const char* kNeedles[] = {
+            "blur", "glare", "dof", "colorfilter", "color_filter",
+            "softfocus", "soft_focus", "bright_rate", "brightrate",
+            "_omb", "shadow"
+        };
+        for (const char* n : kNeedles) {
+            if (lower.find(n) != std::string::npos) return true;
+        }
+        return false;
+    };
+
+    for (const XfbinPage& page : file.pages) {
+        for (const XfbinChunk& chunk : page.chunks) {
+            if (!chunk.type) continue;
+            const RawString& t = *chunk.type;
+            if (t == "nuccChunkCamera" ||
+                t == "nuccChunkLightDirc" ||
+                t == "nuccChunkLightPoint" ||
+                t == "nuccChunkAmbient" ||
+                t == "nuccChunkBillboard" ||
+                t == "nuccChunkTrail") {
+                return true;
+            }
+            if (t == "nuccChunkBinary" && chunk.name &&
+                nameLooksPostProcess(*chunk.name)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+} // namespace
+
 // ============================================================
 //  Parsen
 // ============================================================
@@ -549,6 +618,17 @@ bool ParseAnims(const XfbinFile& file, std::vector<Anm>& out,
         error = "Kein nuccChunkAnm in der Datei.";
         return false;
     }
+
+    // Special-move XFBIN (Kamera/Licht/Binary-FCV): alle Clips
+    // daraus aus der Sequenz halten - auch wenn sie Bone-Keys haben.
+    if (FileLooksCinematic(file)) {
+        for (Anm& a : out) a.cinematicSource = true;
+        warn << "Datei als Cinematic-/FX-Bundle erkannt "
+                "(Kamera/Licht/Post-Process) - Clips sind nicht "
+                "sequenzsicher.\n";
+        warnings = warn.str();
+    }
+
     return allOk;
 }
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.9.4 - Sequenz: Cinematic-/FX-Bundles (2kbxspl1) ueberspringen
+
+- Ursache: 2kbxspl1-Clips haben Bone-Keys, deshalb half `animIsSkeletal` nicht
+- Dateien mit Kamera/Licht/Binary-FCV (Blur/Glare/DOF/...) markieren alle Anm als nicht sequenzsicher
+- neue API `animIsSequenceSafe`
+- Sequenz-Button nutzt `animIsSequenceSafe` statt nur `animIsSkeletal`
+- NaN/Inf-Keys in buildAnimAt / buildMaterialAnim werden uebersprungen
+
 ## 1.9.3 - Kabuto spl1 Sequenz-Crash und Re-Import-Crash
 
 ### Bug 1: `2kbxspl1.xfbin` knallt bei "Load all as sequence"

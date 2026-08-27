@@ -1,6 +1,6 @@
 -- ============================================================
 --  XfbinImport.mcr - user interface for the XFBIN Import plugin
---  Version 1.9.3
+--  Version 1.9.4
 --
 --  Three steps:
 --    1. pick the FOLDER holding the .xfbin files
@@ -8,6 +8,8 @@
 --    3. either apply a single animation, or load them all as a
 --       sequence with a note track
 --
+--  1.9.4: sequence uses animIsSequenceSafe (skips cinematic/FX
+--  bundles like 2kbxspl1 even when they have bone keys).
 --  1.9.3: hybrid files (clump+anm) also feed the anim list;
 --  sequence skips non-skeletal clips; import always clears
 --  plugin scene state before building.
@@ -741,12 +743,10 @@ macroScript XfbinImport_Open
           (
             progressUpdate (100.0 * (i + 1) / iCount)
 
-            -- Post-process clips (Blur, Glare, DOF, ColorFilter, ...)
-            -- have no bone entries. Sequencing them hid every mesh
-            -- or poked missing material targets - crash on Kabuto
-            -- 2kbxspl1. Keep them in the dropdown for inspection,
-            -- but do not put them on the timeline.
-            if ((XfbinCpp.animIsSkeletal i) == 0) then
+            -- Cinematic/FX bundles (Kabuto 2kbxspl1, ...) often have
+            -- bone keys PLUS camera/lights/Binary Blur-Glare FCVs.
+            -- animIsSkeletal alone is not enough - use sequence-safe.
+            if ((XfbinCpp.animIsSequenceSafe i) == 0) then
             (
               iSkipped += 1
             )
@@ -796,7 +796,8 @@ macroScript XfbinImport_Open
 
           if (iSkipped > 0) then
           (
-            format "[XFBIN] Sequence: skipped % non-skeletal clip(s)\n" \
+            format "[XFBIN] Sequence: skipped % unsafe clip(s) "
+                   "(non-skeletal or cinematic/FX bundle)\n" \
                    iSkipped
           ) -- end of skip log
         )

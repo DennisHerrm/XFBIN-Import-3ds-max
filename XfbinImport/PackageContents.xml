@@ -1,21 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ApplicationPackage
-    SchemaVersion="1.9.3"
+    SchemaVersion="1.9.4"
     AutodeskProduct="3ds Max"
     ProductType="Application"
     Name="XfbinImport"
     Description="CyberConnect2 XFBIN Importer"
-    AppVersion="1.9.3"
-    FriendlyVersion="1.9.3"
+    AppVersion="1.9.4"
+    FriendlyVersion="1.9.4"
     Author="DH"
     UpgradeCode="{B4E1C77A-2D93-4F60-9A15-3E6C81D4F2A7}"
-    ProductCode="{B325410A-499A-4087-8CC7-5DC1D81B7C9A}">
+    ProductCode="{FB64EBF3-A65C-4403-B8FD-E9B6D0C8FEE8}">
 
     <!-- UpgradeCode ist die dauerhafte Kennung des Pakets und darf sich
          NIE aendern - Max laedt nur ein Paket je UpgradeCode.
          ProductCode dagegen laut Autodesk-Doku bei jeder Aenderung von
          AppVersion neu vergeben. Beim naechsten Versionssprung also
-         AppVersion, FriendlyVersion, alle Version="1.9.3" UND ProductCode
+         AppVersion, FriendlyVersion, alle Version="1.9.4" UND ProductCode
          anfassen; UpgradeCode stehen lassen. -->
 
     <CompanyDetails Name="DH" />
@@ -34,84 +34,84 @@
 
     <Components Description="plugins parts">
         <RuntimeRequirements OS="Win64" Platform="3ds Max" SeriesMin="2016" SeriesMax="2016" />
-        <ComponentEntry AppName="XfbinImport" Version="1.9.3"
+        <ComponentEntry AppName="XfbinImport" Version="1.9.4"
                         ModuleName="./Contents/2016/XfbinImport.dlu"
                         AppDescription="XFBIN Container Reader" />
     </Components>
 
     <Components Description="plugins parts">
         <RuntimeRequirements OS="Win64" Platform="3ds Max" SeriesMin="2017" SeriesMax="2017" />
-        <ComponentEntry AppName="XfbinImport" Version="1.9.3"
+        <ComponentEntry AppName="XfbinImport" Version="1.9.4"
                         ModuleName="./Contents/2017/XfbinImport.dlu"
                         AppDescription="XFBIN Container Reader" />
     </Components>
 
     <Components Description="plugins parts">
         <RuntimeRequirements OS="Win64" Platform="3ds Max" SeriesMin="2018" SeriesMax="2018" />
-        <ComponentEntry AppName="XfbinImport" Version="1.9.3"
+        <ComponentEntry AppName="XfbinImport" Version="1.9.4"
                         ModuleName="./Contents/2018/XfbinImport.dlu"
                         AppDescription="XFBIN Container Reader" />
     </Components>
 
     <Components Description="plugins parts">
         <RuntimeRequirements OS="Win64" Platform="3ds Max" SeriesMin="2019" SeriesMax="2019" />
-        <ComponentEntry AppName="XfbinImport" Version="1.9.3"
+        <ComponentEntry AppName="XfbinImport" Version="1.9.4"
                         ModuleName="./Contents/2019/XfbinImport.dlu"
                         AppDescription="XFBIN Container Reader" />
     </Components>
 
     <Components Description="plugins parts">
         <RuntimeRequirements OS="Win64" Platform="3ds Max" SeriesMin="2020" SeriesMax="2020" />
-        <ComponentEntry AppName="XfbinImport" Version="1.9.3"
+        <ComponentEntry AppName="XfbinImport" Version="1.9.4"
                         ModuleName="./Contents/2020/XfbinImport.dlu"
                         AppDescription="XFBIN Container Reader" />
     </Components>
 
     <Components Description="plugins parts">
         <RuntimeRequirements OS="Win64" Platform="3ds Max" SeriesMin="2021" SeriesMax="2021" />
-        <ComponentEntry AppName="XfbinImport" Version="1.9.3"
+        <ComponentEntry AppName="XfbinImport" Version="1.9.4"
                         ModuleName="./Contents/2021/XfbinImport.dlu"
                         AppDescription="XFBIN Container Reader" />
     </Components>
 
     <Components Description="plugins parts">
         <RuntimeRequirements OS="Win64" Platform="3ds Max" SeriesMin="2022" SeriesMax="2022" />
-        <ComponentEntry AppName="XfbinImport" Version="1.9.3"
+        <ComponentEntry AppName="XfbinImport" Version="1.9.4"
                         ModuleName="./Contents/2022/XfbinImport.dlu"
                         AppDescription="XFBIN Container Reader" />
     </Components>
 
     <Components Description="plugins parts">
         <RuntimeRequirements OS="Win64" Platform="3ds Max" SeriesMin="2023" SeriesMax="2023" />
-        <ComponentEntry AppName="XfbinImport" Version="1.9.3"
+        <ComponentEntry AppName="XfbinImport" Version="1.9.4"
                         ModuleName="./Contents/2023/XfbinImport.dlu"
                         AppDescription="XFBIN Container Reader" />
     </Components>
 
     <Components Description="plugins parts">
         <RuntimeRequirements OS="Win64" Platform="3ds Max" SeriesMin="2024" SeriesMax="2024" />
-        <ComponentEntry AppName="XfbinImport" Version="1.9.3"
+        <ComponentEntry AppName="XfbinImport" Version="1.9.4"
                         ModuleName="./Contents/2024/XfbinImport.dlu"
                         AppDescription="XFBIN Container Reader" />
     </Components>
 
     <Components Description="plugins parts">
         <RuntimeRequirements OS="Win64" Platform="3ds Max" SeriesMin="2025" SeriesMax="2025" />
-        <ComponentEntry AppName="XfbinImport" Version="1.9.3"
+        <ComponentEntry AppName="XfbinImport" Version="1.9.4"
                         ModuleName="./Contents/2025/XfbinImport.dlu"
                         AppDescription="XFBIN Container Reader" />
     </Components>
 
     <Components Description="plugins parts">
         <RuntimeRequirements OS="Win64" Platform="3ds Max" SeriesMin="2026" SeriesMax="2026" />
-        <ComponentEntry AppName="XfbinImport" Version="1.9.3"
+        <ComponentEntry AppName="XfbinImport" Version="1.9.4"
                         ModuleName="./Contents/2026/XfbinImport.dlu"
                         AppDescription="XFBIN Container Reader" />
     </Components>
 
     <Components Description="plugins parts">
         <RuntimeRequirements OS="Win64" Platform="3ds Max" SeriesMin="2027" SeriesMax="2027" />
-        <ComponentEntry AppName="XfbinImport" Version="1.9.3"
+        <ComponentEntry AppName="XfbinImport" Version="1.9.4"
                         ModuleName="./Contents/2027/XfbinImport.dlu"
                         AppDescription="XFBIN Container Reader" />
     </Components>
@@ -125,7 +125,7 @@
 
     <Components Description="macroscripts parts">
         <RuntimeRequirements OS="Win64" Platform="3ds Max" SeriesMin="2016" SeriesMax="2027" />
-        <ComponentEntry AppName="XfbinImportUI" Version="1.9.3"
+        <ComponentEntry AppName="XfbinImportUI" Version="1.9.4"
                         ModuleName="./Contents/MacroScripts/XfbinImport.mcr"
                         AppDescription="Oberflaeche fuer XFBIN Import" />
     </Components>
@@ -146,14 +146,14 @@
 
     <Components Description="post-start-up scripts parts">
         <RuntimeRequirements OS="Win64" Platform="3ds Max" SeriesMin="2016" SeriesMax="2024" />
-        <ComponentEntry AppName="XfbinImportMenuLegacy" Version="1.9.3"
+        <ComponentEntry AppName="XfbinImportMenuLegacy" Version="1.9.4"
                         ModuleName="./Contents/Post-Start-Up_Scripts/XfbinMenu_2016_2024.ms"
                         AppDescription="Menueeintrag (menuMan, bis 2024)" />
     </Components>
 
     <Components Description="post-start-up scripts parts">
         <RuntimeRequirements OS="Win64" Platform="3ds Max" SeriesMin="2025" SeriesMax="2027" />
-        <ComponentEntry AppName="XfbinImportMenu" Version="1.9.3"
+        <ComponentEntry AppName="XfbinImportMenu" Version="1.9.4"
                         ModuleName="./Contents/Post-Start-Up_Scripts/XfbinMenu_2025_2027.ms"
                         AppDescription="Menueeintrag (CuiMenuManager, ab 2025)" />
     </Components>
