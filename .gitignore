@@ -2,6 +2,9 @@
 _env_check.txt
 _sdk_search.txt
 _build_install_status.txt
+_build_194_status.txt
+_fork_status.txt
+_cer7_*.txt
 *.user
 .vs/
 
