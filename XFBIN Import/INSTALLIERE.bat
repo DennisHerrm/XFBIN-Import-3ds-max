@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================
-REM  XFBIN Import 1.9.2 - Paket erstellen + installieren
+REM  XFBIN Import 1.9.8 - Paket erstellen + installieren
 REM
 REM  1. Baut die Paketstruktur aus output\ und scripts\
 REM  2. Kopiert das fertige Paket nach ApplicationPlugins

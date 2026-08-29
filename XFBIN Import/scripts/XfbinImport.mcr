@@ -1,6 +1,6 @@
 -- ============================================================
 --  XfbinImport.mcr - user interface for the XFBIN Import plugin
---  Version 1.9.4
+--  Version 1.9.8
 --
 --  Three steps:
 --    1. pick the FOLDER holding the .xfbin files
@@ -8,6 +8,23 @@
 --    3. either apply a single animation, or load them all as a
 --       sequence with a note track
 --
+--  1.9.8: fixed a hard crash (0xC000000D from the CRT) when a clip
+--  references many out-of-scene clumps - 2kbxspl1_atk names ~40, and
+--  the "skipped foreign clumps" warning overflowed a fixed buffer.
+--  1.9.7: a clip with bone keys goes into the sequence even if it
+--  also keys a camera/light (2kbxspl1_atk carries the only
+--  2ddw/2itw/2kzw rig animation in the Kabuto set). Camera/light
+--  tracks are ignored. Each clip now runs in its own try/catch, so
+--  one bad clip is skipped instead of aborting the whole sequence.
+--  1.9.6: dropped the file-wide cinematic marker entirely. Sequence
+--  safety is now purely per-clip: a clip is skipped only if it has
+--  no bone keys, or if it also keys a camera/light/ambient. The
+--  usable skeletal clips inside 2kbxspl1 (_e, _l, _s, _dmg, ...)
+--  now load; only 2kbxspl1_atk / _cut are held back.
+--  1.9.5: cinematic/FX file marker narrowed to real full-screen
+--  post-process bundles (Blur/Glare/DOF FCVs, e.g. 2kbxspl1); body
+--  packs that only carry a camera/trail chunk stay in the sequence.
+--  Fixed the skipped-clip log line (format continuation).
 --  1.9.4: sequence uses animIsSequenceSafe (skips cinematic/FX
 --  bundles like 2kbxspl1 even when they have bone keys).
 --  1.9.3: hybrid files (clump+anm) also feed the anim list;
@@ -732,20 +749,22 @@ macroScript XfbinImport_Open
 
         local fAt = iGap as float
 
+        local iSkipped = 0
+        local iFailed  = 0
+
         disableSceneRedraw()
         progressStart "Loading animations..."
 
         try
         (
-          local iSkipped = 0
-
           for i = 0 to (iCount - 1) do
           (
             progressUpdate (100.0 * (i + 1) / iCount)
 
-            -- Cinematic/FX bundles (Kabuto 2kbxspl1, ...) often have
-            -- bone keys PLUS camera/lights/Binary Blur-Glare FCVs.
-            -- animIsSkeletal alone is not enough - use sequence-safe.
+            -- Only clips that key bones go into the sequence. A clip
+            -- that ALSO keys a camera/light (e.g. 2kbxspl1_atk) still
+            -- comes through - the builders read bone entries only and
+            -- ignore the camera/light tracks.
             if ((XfbinCpp.animIsSequenceSafe i) == 0) then
             (
               iSkipped += 1
@@ -754,52 +773,71 @@ macroScript XfbinImport_Open
             (
               local fLen = XfbinCpp.animFrames i
 
-              -- Every sequence must stand on its own. A typical
-              -- animation only touches 112 of the 222 character
-              -- bones, and some do not touch the weapons at all.
-              -- Without a key at both ends those bones have no key
-              -- inside the sequence at all, and Max interpolates
-              -- straight across the gap - the previous animation
-              -- bleeds into the next one.
-              if (chkIdle.checked) then
+              -- Each clip on its own try: one clip that errors is
+              -- skipped and logged, the rest of the sequence still
+              -- finishes. (A hard crash inside the DLU is not
+              -- catchable from MAXScript - the C++ guards handle
+              -- those.)
+              try
               (
-                XfbinCpp.buildIdleKeys i fAt (fAt + fLen)
-              ) -- end of idle check
+                -- Every sequence must stand on its own. A typical
+                -- animation only touches 112 of the 222 character
+                -- bones, and some do not touch the weapons at all.
+                -- Without a key at both ends those bones have no key
+                -- inside the sequence at all, and Max interpolates
+                -- straight across the gap - the previous animation
+                -- bleeds into the next one.
+                if (chkIdle.checked) then
+                (
+                  XfbinCpp.buildIdleKeys i fAt (fAt + fLen)
+                ) -- end of idle check
 
-              -- Objects belonging to a model this animation never
-              -- mentions are hidden for its stretch of the
-              -- timeline. Without it every summoned creature
-              -- stands around in all 104 sequences.
-              if (chkVis.checked) then
+                -- Objects belonging to a model this animation never
+                -- mentions are hidden for its stretch of the
+                -- timeline. Without it every summoned creature
+                -- stands around in all 104 sequences.
+                if (chkVis.checked) then
+                (
+                  XfbinCpp.buildVisibility i fAt (fAt + fLen)
+                ) -- end of visibility check
+
+                -- UV offset, tiling and opacity of the materials.
+                -- In this data it is mostly UV scrolling on eyes,
+                -- hair and effect surfaces.
+                if (chkMatAnim.checked) then
+                (
+                  iKeys += XfbinCpp.buildMaterialAnim i fAt (fAt + fLen)
+                ) -- end of material check
+
+                iKeys += XfbinCpp.buildAnimAt i fAt 7 spnScale.value
+
+                if (NT != undefined) then
+                (
+                  AddNoteKeys NT (XfbinCpp.animName i) fAt (fAt + fLen)
+                ) -- end of note check
+
+                fAt = fAt + fLen + iGap
+              )
+              catch
               (
-                XfbinCpp.buildVisibility i fAt (fAt + fLen)
-              ) -- end of visibility check
-
-              -- UV offset, tiling and opacity of the materials.
-              -- In this data it is mostly UV scrolling on eyes,
-              -- hair and effect surfaces.
-              if (chkMatAnim.checked) then
-              (
-                iKeys += XfbinCpp.buildMaterialAnim i fAt (fAt + fLen)
-              ) -- end of material check
-
-              iKeys += XfbinCpp.buildAnimAt i fAt 7 spnScale.value
-
-              if (NT != undefined) then
-              (
-                AddNoteKeys NT (XfbinCpp.animName i) fAt (fAt + fLen)
-              ) -- end of note check
-
-              fAt = fAt + fLen + iGap
+                iFailed += 1
+                format "[XFBIN] Sequence: clip % '%' failed - skipped: %\n" \
+                       i (XfbinCpp.animName i) (getCurrentException())
+              ) -- end of per-clip try/catch
             ) -- end of skeletal check
           ) -- end of animation loop
 
           if (iSkipped > 0) then
           (
-            format "[XFBIN] Sequence: skipped % unsafe clip(s) "
-                   "(non-skeletal or cinematic/FX bundle)\n" \
+            format "[XFBIN] Sequence: skipped % clip(s) with no bone keys\n" \
                    iSkipped
           ) -- end of skip log
+
+          if (iFailed > 0) then
+          (
+            format "[XFBIN] Sequence: % clip(s) errored and were skipped\n" \
+                   iFailed
+          ) -- end of fail log
         )
         catch
         (
@@ -821,10 +859,12 @@ macroScript XfbinImport_Open
 
         animationRange = interval 0 fAt
 
-        lblStatus.text = (iCount as string) + " animations, " + \
+        lblStatus.text = ((iCount - iSkipped - iFailed) as string) + " of " + \
+                         (iCount as string) + " animations, " + \
                          (iKeys as string) + " keys, " + \
                          ((fAt as integer) as string) + " frames, " + \
                          (iStep as string) + " step keys" + \
+                         (if (iFailed > 0) then (", " + (iFailed as string) + " errored") else "") + \
                          (if (NT != undefined) then ", note track on scene root." \
                           else ", no note track.")
         lblTime.text   = XfbinCpp.timings()

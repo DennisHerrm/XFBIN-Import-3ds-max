@@ -346,59 +346,31 @@ bool Anm::HasCameraOrLightEntries() const {
     return false;
 }
 
+// Darf der Clip in "Load all as sequence"?
+//
+// Geschichte des Filters:
+//   1.9.3  nur !HasBoneEntries().
+//   1.9.4  zusaetzlich ein DATEI-weiter Cinematic-Marker: jede
+//          XFBIN mit Kamera-/Licht-/Trail-Chunk oder einem
+//          Post-Process-Binary-FCV galt komplett als unsicher.
+//          Damit fielen bei Kabuto auch 2kbxbod1c/l/s (~93 reine
+//          Bone-Clips) raus.
+//   1.9.6  Marker fallengelassen, dafuer pro Clip raus, sobald er
+//          einen Kamera-/Licht-/Ambient-Eintrag hat. Das schloss
+//          aber 2kbxspl1_atk aus - den EINZIGEN Clip im ganzen
+//          Kabuto-Ordner, der die Gast-Rigs 2ddwbod1 / 2itwbod1 /
+//          2kzwbod1 animiert.
+//   1.9.7  Nur noch HasBoneEntries(). Ein Clip, der Bones keyt,
+//          gehoert in die Sequenz - die Builder lesen ohnehin nur
+//          kEntryBone, die Kamera-/Licht-/Ambient-Spuren desselben
+//          Clips werden schlicht ignoriert. Ein Clip ganz ohne
+//          Bone-Eintrag (reine FX-/Kamera-/Material-Clips) bleibt
+//          draussen. Der Sequenz-Loop kapselt zusaetzlich jeden
+//          Clip einzeln in try/catch, damit ein Problemclip nur
+//          sich selbst ueberspringt statt die ganze Sequenz.
 bool Anm::IsSequenceSafe() const {
-    if (!HasBoneEntries()) return false;
-    if (cinematicSource) return false;
-    if (HasCameraOrLightEntries()) return false;
-    return true;
+    return HasBoneEntries();
 }
-
-namespace {
-
-// Special-move Bundles (z.B. 2kbxspl1) mischen Skelett-Clips mit
-// Kamera/Licht und Binary-FCVs fuer Blur/Glare/DOF. Die Anm-Clips
-// haben Bones - HasBoneEntries reicht deshalb nicht als Filter.
-bool FileLooksCinematic(const XfbinFile& file) {
-    auto nameLooksPostProcess = [](const RawString& name) -> bool {
-        std::string lower;
-        lower.reserve(name.size());
-        for (unsigned char c : name) {
-            lower.push_back(static_cast<char>(
-                (c >= 'A' && c <= 'Z') ? (c - 'A' + 'a') : c));
-        }
-        static const char* kNeedles[] = {
-            "blur", "glare", "dof", "colorfilter", "color_filter",
-            "softfocus", "soft_focus", "bright_rate", "brightrate",
-            "_omb", "shadow"
-        };
-        for (const char* n : kNeedles) {
-            if (lower.find(n) != std::string::npos) return true;
-        }
-        return false;
-    };
-
-    for (const XfbinPage& page : file.pages) {
-        for (const XfbinChunk& chunk : page.chunks) {
-            if (!chunk.type) continue;
-            const RawString& t = *chunk.type;
-            if (t == "nuccChunkCamera" ||
-                t == "nuccChunkLightDirc" ||
-                t == "nuccChunkLightPoint" ||
-                t == "nuccChunkAmbient" ||
-                t == "nuccChunkBillboard" ||
-                t == "nuccChunkTrail") {
-                return true;
-            }
-            if (t == "nuccChunkBinary" && chunk.name &&
-                nameLooksPostProcess(*chunk.name)) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-} // namespace
 
 // ============================================================
 //  Parsen
@@ -619,13 +591,20 @@ bool ParseAnims(const XfbinFile& file, std::vector<Anm>& out,
         return false;
     }
 
-    // Special-move XFBIN (Kamera/Licht/Binary-FCV): alle Clips
-    // daraus aus der Sequenz halten - auch wenn sie Bone-Keys haben.
-    if (FileLooksCinematic(file)) {
-        for (Anm& a : out) a.cinematicSource = true;
-        warn << "Datei als Cinematic-/FX-Bundle erkannt "
-                "(Kamera/Licht/Post-Process) - Clips sind nicht "
-                "sequenzsicher.\n";
+    // Hinweis auf Clips, die neben Bones auch Kamera/Licht keyen
+    // (z.B. 2kbxspl1_atk, _cut). Die laufen in der Sequenz mit -
+    // nur ihre Bone-Spuren, die Kamera/Licht wird ignoriert.
+    std::string cineNames;
+    for (const Anm& a : out) {
+        if (a.HasBoneEntries() && a.HasCameraOrLightEntries()) {
+            if (!cineNames.empty()) cineNames += ", ";
+            cineNames += Escape(a.name);
+        }
+    }
+    if (!cineNames.empty()) {
+        warn << cineNames
+             << ": Clip keyt auch Kamera/Licht - in der Sequenz "
+                "werden nur die Bone-Spuren gesetzt.\n";
         warnings = warn.str();
     }
 

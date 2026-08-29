@@ -164,7 +164,7 @@
 #define XFBINIMPORT_CLASS_ID     Class_ID(0x2C614F13, 0x5A0D7B22)
 #define XFBINIMPORT_INTERFACE_ID Interface_ID(0x2C614F13, 0x5A0D7B23)
 
-#define XFBINIMPORT_VERSION_STR  _T("1.9.4")
+#define XFBINIMPORT_VERSION_STR  _T("1.9.8")
 
 // ============================================================
 //  Function IDs

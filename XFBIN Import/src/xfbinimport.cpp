@@ -1925,6 +1925,8 @@ int XfbinImportInterface::BuildAnimAt(int index, float startFrame,
     int unmatched    = 0;
     int foreignClump = 0;
     std::string  foreignNames;
+    int          foreignNamesShown  = 0;
+    bool         foreignNamesCapped = false;
     std::wstring firstUnmatched;
 
     SuspendAnimate();
@@ -1960,9 +1962,19 @@ int XfbinImportInterface::BuildAnimAt(int index, float startFrame,
         if (!ResolveEntryTarget(anm, entry, clumpSlot, boneSlot)) {
             if (clumpSlot == SIZE_MAX) {
                 ++foreignClump;
-                if (foreignNames.find(entry.clumpName) == std::string::npos) {
-                    if (!foreignNames.empty()) foreignNames += ", ";
-                    foreignNames += entry.clumpName;
+                // Die Namensliste sonst unbegrenzt lang - 2kbxspl1_atk
+                // nennt ~40 fremde Clumps. Nach ein paar abschneiden,
+                // sonst laeuft die Warnung in einen festen Puffer
+                // ueber (swprintf_s -> 0xC000000D, Max stirbt).
+                if (!foreignNamesCapped &&
+                    foreignNames.find(entry.clumpName) == std::string::npos) {
+                    if (foreignNamesShown >= 12 || foreignNames.size() > 240) {
+                        foreignNamesCapped = true;
+                    } else {
+                        if (!foreignNames.empty()) foreignNames += ", ";
+                        foreignNames += entry.clumpName;
+                        ++foreignNamesShown;
+                    }
                 }
             } else {
                 ++unmatched;
@@ -2122,23 +2134,29 @@ int XfbinImportInterface::BuildAnimAt(int index, float startFrame,
         // Das ist der Normalfall, kein Fehler: eine
         // Animationsdatei spricht mehrere Modelle an, und nur
         // eines davon steht in der Szene.
-        wchar_t wbuf[420];
-        swprintf_s(wbuf, L"%d Eintraege gehoeren zu Clumps, die nicht in der "
-                         L"Szene stehen (%s) - uebersprungen.",
-                   foreignClump, Cp932ToWide(foreignNames).c_str());
-        AddWarning(wbuf);
+        //
+        // Ueber std::wstring statt festem Puffer: foreignNames ist
+        // datengetrieben und kann lang werden.
+        std::wstring w = std::to_wstring(foreignClump) +
+            L" Eintraege gehoeren zu Clumps, die nicht in der Szene stehen (" +
+            Cp932ToWide(foreignNames);
+        if (foreignNamesCapped) w += L", ...";
+        w += L") - uebersprungen.";
+        AddWarning(w);
     }
 
     if (unmatched > 0) {
-        wchar_t wbuf[256];
-        swprintf_s(wbuf, L"%d Eintraege ohne passenden Bone (erster: '%s'). "
-                         L"Gehoert die Animation zu diesem Modell?",
-                   unmatched, firstUnmatched.c_str());
-        AddWarning(wbuf);
+        AddWarning(std::to_wstring(unmatched) +
+            L" Eintraege ohne passenden Bone (erster: '" + firstUnmatched +
+            L"'). Gehoert die Animation zu diesem Modell?");
     }
 
     wchar_t buf[256];
-    swprintf_s(buf, L"buildAnim '%s': %d Keys in %.1f ms, %.2f Frames ab %.0f "
+    // _TRUNCATE: bei einem ungewoehnlich langen anm.name lieber
+    // abschneiden als (wie swprintf_s) den Invalid-Parameter-
+    // Handler ausloesen und Max mitnehmen.
+    _snwprintf_s(buf, _TRUNCATE,
+               L"buildAnim '%s': %d Keys in %.1f ms, %.2f Frames ab %.0f "
                     L"(Kanaele: %s%s%s)",
                Cp932ToWide(anm.name).c_str(), keysSet, msKeys_, anm.frameCount,
                static_cast<double>(startFrame),
@@ -2508,7 +2526,8 @@ int XfbinImportInterface::BuildVisibility(int index, float startFrame,
     }
 
     wchar_t buf[192];
-    swprintf_s(buf, L"buildVisibility '%s': %d Objekte, davon %d ausgeblendet",
+    _snwprintf_s(buf, _TRUNCATE,
+               L"buildVisibility '%s': %d Objekte, davon %d ausgeblendet",
                Cp932ToWide(anm.name).c_str(), touched, hidden);
     Log(buf);
 

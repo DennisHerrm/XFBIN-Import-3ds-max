@@ -203,12 +203,6 @@ struct Anm {
     std::vector<AnmCoordParent> coordParents;
     std::vector<AnmEntry>       entries;
 
-    // true = Quell-XFBIN ist ein Special-Move-/Cinematic-Bundle
-    // (Kamera, Lichter, Binary-FCV wie Blur/Glare/DOF, ...).
-    // Solche Clips haben oft trotzdem Bone-Keys, knallen aber in
-    // der Sequenz (Kabuto 2kbxspl1). Einzelanwenden bleibt erlaubt.
-    bool cinematicSource = false;
-
     size_t KeyframeCount() const;
 
     // Mindestens ein Bone-Eintrag?
@@ -217,8 +211,8 @@ struct Anm {
     // Kamera-, Licht- oder Ambient-Eintraege im Clip selbst.
     bool HasCameraOrLightEntries() const;
 
-    // Darf in "Load all as sequence" landen?
-    // Braucht Bones und darf kein Cinematic-/FX-Bundle sein.
+    // Darf in "Load all as sequence" landen? Braucht mindestens
+    // einen Bone-Eintrag - mehr nicht (siehe .cpp).
     bool IsSequenceSafe() const;
 };
 

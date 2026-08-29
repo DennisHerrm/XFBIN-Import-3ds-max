@@ -1,5 +1,87 @@
 # Changelog
 
+## 1.9.8 - Fix: harter Absturz bei Clips mit vielen fremden Clumps
+
+- Symptom: "Load all as sequence" mit `2kbxspl1_atk` nahm Max ohne
+  Fehlermeldung mit. Minidump: `0xC000000D` (STATUS_INVALID_PARAMETER)
+  aus `ucrtbase.dll` - kein Access Violation in der Anim-Logik.
+- Ursache: `BuildAnimAt` baut nach dem Keyen eine Warnung, die jeden
+  vom Clip referenzierten, aber nicht in der Szene stehenden Clump
+  auflistet. `2kbxspl1_atk` nennt ~40 solche Clumps; der Name-String
+  (~640 Zeichen) lief in `swprintf_s(wchar_t[420], ...)` ueber, und
+  der Secure-CRT-Handler loest bei Ueberlauf `0xC000000D` aus. Ein
+  MAXScript-`try/catch` faengt das nicht.
+- Fix:
+  - Die Namensliste wird beim Sammeln nach 12 Namen / 240 Zeichen
+    gekappt (`", ..."` angehaengt).
+  - Die betroffenen Warnungen in `BuildAnimAt` bauen jetzt ueber
+    `std::wstring` statt festem Puffer.
+  - Die Log-Zeilen in `BuildAnimAt` / `BuildVisibility`, die
+    `anm.name` einsetzen, nutzen `_snwprintf_s(..., _TRUNCATE, ...)`
+    - abschneiden statt abstuerzen.
+- Damit laeuft `2kbxspl1_atk` normal in die Sequenz und animiert
+  `2ddwbod1` / `2itwbod1` / `2kzwbod1`.
+- Version -> 1.9.8, neuer ProductCode. UpgradeCode unveraendert.
+
+## 1.9.7 - Sequenz: Kamera-/Licht-Clips kommen mit rein (nur Bone-Spuren)
+
+- `IsSequenceSafe()` = `HasBoneEntries()`. Ein Clip, der Bones keyt,
+  gehoert in "Load all as sequence" - auch wenn er zusaetzlich
+  Kamera/Licht/Ambient keyt. Die Builder lesen ohnehin nur
+  `kEntryBone`; die Kamera-/Licht-Spuren werden ignoriert.
+- Hintergrund: `2kbxspl1_atk` ist im Kabuto-Ordner der EINZIGE Clip,
+  der die Gast-Rigs `2ddwbod1` / `2itwbod1` / `2kzwbod1` animiert
+  (je ~115-135 Bone-Eintraege). 1.9.6 hatte ihn wegen seiner
+  Kamera-/Licht-Eintraege aus der Sequenz gehalten.
+- Der Sequenz-Loop kapselt jetzt jeden Clip einzeln in `try/catch`:
+  ein Clip, der einen MAXScript-Fehler wirft, wird uebersprungen
+  und protokolliert, statt die ganze Sequenz abzubrechen. (Ein
+  harter Absturz in der DLU bleibt fuer MAXScript unfangbar - dafuer
+  greifen die C++-Guards.)
+- Statuszeile zeigt "X of Y animations" und ggf. "N errored".
+- Version -> 1.9.7, neuer ProductCode. UpgradeCode unveraendert.
+
+## 1.9.6 - Sequenz: Cinematic-Marker ganz raus, Filter rein pro Clip
+
+- Der datei-weite `FileLooksCinematic`-Marker aus 1.9.4/1.9.5 ist
+  entfernt (`cinematicSource` gestrichen).
+- `IsSequenceSafe()` entscheidet jetzt nur noch pro Clip:
+  - kein Bone-Eintrag  -> raus (reine FX-/Kamera-/Material-Clips)
+  - Kamera-/Licht-/Ambient-Eintrag im Clip -> raus
+  - sonst -> rein
+- Wirkung auf `2kbxspl1.xfbin` (14 Clips): nur `2kbxspl1_atk` und
+  `2kbxspl1_cut` tragen Kamera/Licht und bleiben draussen; die
+  anderen zwoelf (`_e`, `_l`, `_s`, `_dmg`, `_cut_dmg`, `_cut_nc`,
+  `_atk_e`, `2kbxteam_wait`, `anb01spl1_e/l`, `anb02spl1_e/l`)
+  laufen jetzt normal in die Sequenz.
+- Die drei Builder (`BuildAnimAt` / `BuildVisibility` /
+  `BuildMaterialAnim` / `BuildIdleKeys`) verarbeiten weiterhin nur
+  `kEntryBone` und ueberspringen fremde Clumps sauber - deshalb
+  kippt der Wegfall des Markers die Sequenz nicht.
+- Warnung nennt jetzt die ausgelassenen Clips beim Namen.
+- Version -> 1.9.6, neuer ProductCode. UpgradeCode unveraendert.
+
+## 1.9.5 - Sequenz: Cinematic-Marker eingegrenzt (Body-Packs bleiben drin)
+
+- Ursache: `FileLooksCinematic` galt file-weit fuer JEDE Datei mit
+  Kamera-/Licht-/Trail-/Ambient-Chunk oder Binary-FCV mit
+  Post-Process-Namen. Bei Kabuto fielen damit `2kbxbod1c/l/s`
+  (~93 reine Bone-Clips) komplett aus "Load all as sequence".
+- Jetzt schlaegt der file-weite Marker nur noch bei einem echten
+  Vollbild-FX-Stack an: `nuccChunkBinary`, dessen Name eine der
+  STARKEN Nadeln traegt (`blur`, `glare`, `dof`, `softfocus`,
+  `soft_focus`, `_omb`). Die schwachen Nadeln (`bright_rate`,
+  `colorfilter`, `shadow`) und die Chunk-Typen Kamera/Licht/Trail
+  loesen ihn nicht mehr aus - `2kbxspl1` bleibt erkannt, `bod1c/l/s`
+  nicht.
+- Einzelne Kamera-/Licht-Clips in Hybrid-Dateien filtert weiterhin
+  `IsSequenceSafe` ueber `HasCameraOrLightEntries` pro Clip.
+- `XfbinImport.mcr`: die Log-Zeile fuer uebersprungene Clips hatte
+  eine fehlende `\`-Fortsetzung -> `format: not enough arguments`
+  brach die Sequenz ab, sobald ueberhaupt ein Clip uebersprungen
+  wurde (also immer bei vorhandenem `2kbxspl1`).
+- Version -> 1.9.5, neuer ProductCode. UpgradeCode unveraendert.
+
 ## 1.9.4 - Sequenz: Cinematic-/FX-Bundles (2kbxspl1) ueberspringen
 
 - Ursache: 2kbxspl1-Clips haben Bone-Keys, deshalb half `animIsSkeletal` nicht
