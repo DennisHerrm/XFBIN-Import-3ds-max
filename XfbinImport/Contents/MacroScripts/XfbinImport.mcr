@@ -1,6 +1,6 @@
 -- ============================================================
 --  XfbinImport.mcr - user interface for the XFBIN Import plugin
---  Version 1.9.2
+--  Version 2.1.6
 --
 --  Three steps:
 --    1. pick the FOLDER holding the .xfbin files
@@ -31,6 +31,11 @@ macroScript XfbinImport_Open
   buttonText:"XFBIN Import"
   toolTip:"XFBIN Import - model and animations"
 (
+  -- Die Plugin-Version, zu der diese Oberflaeche gehoert.
+  --
+  -- VERSION_SETZEN.py haelt sie mit dem Header gleich.
+  local sExpectedPlugin = "2.1.6"
+
   fn GetPluginVersion =
   (
     local sResult = undefined
@@ -67,58 +72,75 @@ macroScript XfbinImport_Open
     label lblPlugin "Plugin: -" align:#left  across:2 offset:[0,3]
     label lblMax    ""          align:#right          offset:[0,3]
 
-    group "Source folder"
+    group "Source"
     (
       editText edtDir    ""         width:334 align:#left across:2 offset:[-6,0]
       button   btnBrowse "Browse..." width:76 height:21 align:#right offset:[2,-2]
 
       label lblFound "No folder selected." align:#left width:416 offset:[-4,2]
+    )
 
-      checkBox chkClear    "Clear scene first"        align:#left across:3 offset:[-4,4]
-      checkBox chkTextures "Import textures" checked:true align:#center offset:[-16,4]
+    group "Import"
+    (
+      checkBox chkTextures "Textures" checked:true align:#left across:2 offset:[-4,2]
       checkBox chkMedit    "Fill Material Editor" checked:true \
-               align:#right offset:[4,4]
+               align:#left offset:[-64,2]
 
-      checkBox chkLayers "Sort into layers (per model, meshes and bones apart)" \
-               checked:true align:#left offset:[-4,4]
+      checkBox chkLayers "Sort into layers" checked:true \
+               align:#left across:2 offset:[-4,2]
+      checkBox chkClear  "Clear scene first" align:#left offset:[-64,2]
 
-      button btnImport "Import" width:200 height:26 align:#center \
-             offset:[0,4] enabled:false
+      button btnImport "Import" width:416 height:26 align:#center \
+             offset:[0,6] enabled:false
     )
 
     group "Animation"
     (
       label lblAnims "-" align:#left width:416 offset:[-4,0]
 
-      dropDownList ddlAnim "" width:270 across:2 align:#left offset:[-4,2]
-      button btnBuildAnim "Apply selected" width:140 height:23 \
-             align:#right offset:[4,4] enabled:false
+      listBox lstAnim "" width:416 height:7 align:#left offset:[-4,2]
 
-      checkBox chkNotes "Create note track" checked:true \
-               align:#left across:4 offset:[-4,4]
-      checkBox chkIdle "Rest keys" checked:true align:#left offset:[-46,4]
-      checkBox chkVis  "Visibility" checked:true align:#left offset:[-88,4]
-      checkBox chkMatAnim "Material anim" checked:true align:#left offset:[-130,4]
+      button btnBuildAnim "Apply selected" width:200 height:23 \
+             align:#left across:2 offset:[-4,4] enabled:false
       spinner spnGap "Gap: " range:[0, 500, 10] type:#integer \
-              fieldWidth:44 align:#center offset:[42,6]
-      button btnSequence "Load all as sequence" width:140 height:23 \
-             align:#right offset:[4,4] enabled:false
+              fieldWidth:44 align:#right offset:[4,6]
+
+      -- Alle vier gleich ausgerichtet, das Raster macht den
+      -- Abstand.
+      --
+      -- Vorher standen hier negative Offsets von -52 und -96,
+      -- um sie enger zu ruecken. Bei across:4 ist eine Spalte
+      -- aber nur rund 104 Pixel breit - der Offset schob das
+      -- zweite Kaestchen mitten ins erste. Das Raster kann das
+      -- besser als eine Handkorrektur.
+      checkBox chkNotes   "Note track" checked:true \
+               align:#left across:4 offset:[-4,4]
+      checkBox chkIdle    "Rest keys"  checked:true align:#left offset:[-4,4]
+      checkBox chkVis     "Visibility" checked:true align:#left offset:[-4,4]
+      checkBox chkMatAnim "Material"   checked:true align:#left offset:[-4,4]
+
+      button btnSequence "Load all as sequence" width:416 height:26 \
+             align:#center offset:[0,6] enabled:false
+
+      -- Gleiche Breite und Ausrichtung wie der Knopf darueber -
+      -- sonst sitzt der Balken vier Pixel daneben und es sieht
+      -- nach Versehen aus.
+      progressBar pbSeq "" width:416 height:6 align:#center offset:[0,4] \
+                  color:(color 74 158 219) value:0
     )
 
     group "Options"
     (
       dropDownList ddlMode "" items:#("Point helpers", "Bone objects") \
                    selection:2 width:132 across:3 align:#left offset:[-4,2]
-      spinner spnScale "Scale: " range:[0.001, 1000.0, 1.0] \
-              type:#float fieldWidth:52 align:#center offset:[0,6]
-      checkBox chkSkipLod "Skip LOD" checked:true align:#right offset:[4,6]
-
       spinner spnBoneSize "Bone size: " range:[0.0, 100.0, 0.0] \
-              type:#float fieldWidth:52 align:#left across:2 offset:[-4,4]
+              type:#float fieldWidth:52 align:#center offset:[0,6]
+      spinner spnScale "Scale: " range:[0.001, 1000.0, 1.0] \
+              type:#float fieldWidth:52 align:#right offset:[4,6]
 
-      checkBox chkNormals "Explicit normals" checked:true \
-               align:#left across:2 offset:[-4,4]
-      checkBox chkSkin    "Skin modifier" checked:true align:#left offset:[-72,4]
+      checkBox chkSkipLod "Skip LOD" checked:true align:#left across:3 offset:[-4,4]
+      checkBox chkNormals "Explicit normals" checked:true align:#center offset:[-30,4]
+      checkBox chkSkin    "Skin modifier" checked:true align:#right offset:[4,4]
     )
 
     group "Status"
@@ -357,14 +379,22 @@ macroScript XfbinImport_Open
           local iClump = XfbinCpp.countOfType "nuccChunkClump"
           local iAnm   = XfbinCpp.countOfType "nuccChunkAnm"
 
+          -- Two independent checks, no else.
+          --
+          -- None of the folders seen so far has a file carrying
+          -- both, but the format does not rule it out: an XFBIN
+          -- can hold a clump AND anm chunks. With an else, the
+          -- animations of such a file would be silently lost.
+          -- The check costs nothing.
           if (iClump > 0) then
           (
             append aModelFiles f
-          )
-          else if (iAnm > 0) then
+          ) -- end of clump check
+
+          if (iAnm > 0) then
           (
             append aAnimFiles f
-          ) -- end of type check
+          ) -- end of anm check
         ) -- end of open check
       ) -- end of file loop
 
@@ -419,11 +449,16 @@ macroScript XfbinImport_Open
       (
         for i = 0 to (iCount - 1) do
         (
-          append aNames ((i as string) + ": " + (XfbinCpp.animName i))
+          -- Name and length. With over a hundred entries,
+          -- "which one is the short one to try" is otherwise
+          -- impossible to answer.
+          local fLen = XfbinCpp.animFrames i
+          append aNames ((XfbinCpp.animName i) + "   " + \
+                         ((fLen as integer) as string) + " f")
         ) -- end of name loop
       ) -- end of count check
 
-      ddlAnim.items = aNames
+      lstAnim.items = aNames
 
       local aLines = filterString (XfbinCpp.animSummary()) "\n" \
                      splitEmptyTokens:false
@@ -460,18 +495,69 @@ macroScript XfbinImport_Open
         lblStatus.text    = "XfbinImport.dlu is not loaded - check the Plugin Manager."
         btnBrowse.enabled = false
       )
+      else if (sVer != sExpectedPlugin) then
+      (
+        -- ------------------------------------------------------
+        --  Skript und Plugin passen nicht zusammen
+        --
+        --  INSTALLIERE.bat kopiert nur, es baut nicht. Wer die
+        --  Skripte aktualisiert und den Neubau vergisst, ruft
+        --  Funktionen auf, die es in der alten .dlu noch nicht
+        --  gibt - und bekam bisher hundertvier gleichlautende
+        --  "Unknown property"-Meldungen mitten im Sequenzlauf.
+        --
+        --  Das ist ein reiner Zeichenkettenvergleich. Der
+        --  Faehigkeitstest ueber getPropNames aus 1.7.2 war
+        --  falsch - getPropNames liefert Eigenschaften, die
+        --  Plugin-Funktionen sind Methoden - und blockierte
+        --  deshalb ein funktionierendes Plugin. Hier kann das
+        --  nicht passieren: version() gibt es seit der ersten
+        --  Fassung.
+        -- ------------------------------------------------------
+        lblPlugin.text = "Plugin " + sVer + "  -  scripts expect " + sExpectedPlugin
+        lblStatus.text = "Plugin is older than these scripts - run BAUE_ALLE.bat, then INSTALLIERE.bat."
+
+        btnBrowse.enabled   = false
+        btnImport.enabled   = false
+        btnBuildAnim.enabled = false
+        btnSequence.enabled = false
+
+        format "\n[XFBIN] Plugin and scripts do not match.\n"
+        format "[XFBIN]   plugin reports : %\n" sVer
+        format "[XFBIN]   scripts expect : %\n" sExpectedPlugin
+        format "[XFBIN]\n"
+        format "[XFBIN] INSTALLIERE.bat only copies files - it does not build.\n"
+        format "[XFBIN] Run BAUE_ALLE.bat first, then INSTALLIERE.bat,\n"
+        format "[XFBIN] then restart 3ds Max.\n\n"
+
+        RefreshScene()
+      )
       else
       (
         lblPlugin.text = "Plugin " + sVer
-
         RefreshScene()
+
+        -- If we were opened from Max' Import dialog, the folder
+        -- of the chosen file is waiting there. Fill it in and
+        -- scan right away - the user has already made the
+        -- choice.
+        local sPending = XfbinCpp.pendingFolder()
+
+        if (sPending != "" and (doesFileExist sPending)) then
+        (
+          edtDir.text    = sPending
+          lblStatus.text = "Scanning folder..."
+          windows.processPostedMessages()
+          ScanFolder sPending
+          lblStatus.text = "Ready."
+        ) -- end of pending check
       ) -- end of plugin check
     ) -- end of open handler
 
     on spnBoneSize changed fVal do
     (
-      -- Wirkt sofort, damit man die Groesse ausprobieren kann,
-      -- ohne neu zu importieren.
+      -- Takes effect at once, so a size can be tried out
+      -- without importing again.
       local n = ResizeBones fVal
       if (n > 0) then
       (
@@ -508,10 +594,22 @@ macroScript XfbinImport_Open
 
     on btnImport pressed do
     (
+      -- Close the file first, then clean up.
+      --
+      -- If the scene is cleared, the plugin's bookkeeping has to
+      -- go with it. If it is NOT cleared, single objects may
+      -- still have been deleted by hand - pruneScene then drops
+      -- the dead entries instead of carrying them along.
+      XfbinCpp.close()
+
       if (chkClear.checked) then
       (
         delete objects
         XfbinCpp.clearScene()
+      )
+      else
+      (
+        XfbinCpp.pruneScene()
       ) -- end of clear check
 
       local iMode    = ddlMode.selection - 1
@@ -520,10 +618,10 @@ macroScript XfbinImport_Open
       local iNormals = if chkNormals.checked then 1 else 0
       local iSkin    = if chkSkin.checked    then 1 else 0
 
-      -- Die Bone-Groesse geht ans Plugin, bevor etwas angelegt
-      -- wird: dort wird sie beim Erzeugen des Bone-Objekts
-      -- gesetzt. Der frueher noetige Nachlauf entfaellt damit -
-      -- und mit ihm die Moeglichkeit, ihn zu vergessen.
+      -- The bone size goes to the plugin before anything is
+      -- created: it is applied while the bone object is built.
+      -- That removes the post-pass this used to need - and with
+      -- it the chance of forgetting to call it.
       XfbinCpp.setBoneSize spnBoneSize.value
 
       local iBones  = 0
@@ -618,7 +716,10 @@ macroScript XfbinImport_Open
 
     on btnBuildAnim pressed do
     (
-      local iIndex = ddlAnim.selection - 1
+      -- listBox reports its selection 1-based, and undefined
+        -- when nothing is picked. The plugin counts from 0.
+        local iSel = lstAnim.selection
+        local iIndex = if (iSel == undefined) then -1 else (iSel - 1)
 
       if (iIndex < 0) then
       (
@@ -705,13 +806,35 @@ macroScript XfbinImport_Open
         local fAt = iGap as float
 
         disableSceneRedraw()
-        progressStart "Loading animations..."
 
-        try
+        -- One try/catch PER CLIP, not around the whole loop.
+        --
+        -- A single failing clip used to take the entire run with
+        -- it - at 104 sequences, everything built so far. Now
+        -- that one clip is skipped and logged, and the rest
+        -- carries on.
+        local iSkippedClips = 0
+        local sLastError    = ""
+        local iSameError    = 0
+
         (
           for i = 0 to (iCount - 1) do
           (
-            progressUpdate (100.0 * (i + 1) / iCount)
+            pbSeq.value = 100.0 * (i + 1) / iCount
+            windows.processPostedMessages()
+
+            try
+            (
+            -- Pure camera or effect clips have nothing to add
+            -- to a skeletal sequence. This is not a safety
+            -- measure - the builders handle them fine - it just
+            -- saves the work.
+            if ((XfbinCpp.animHasBones i) == 0) then
+            (
+              iSkippedClips += 1
+            )
+            else
+            (
 
             local fLen = XfbinCpp.animFrames i
 
@@ -752,14 +875,40 @@ macroScript XfbinImport_Open
             ) -- end of note check
 
             fAt = fAt + fLen + iGap
-          ) -- end of animation loop
-        )
-        catch
-        (
-          format "[XFBIN] Sequence aborted: %\n" (getCurrentException())
-        ) -- end of try/catch
+            ) -- end of skeletal check
+            ) -- end of per-clip try
+            catch
+            (
+              -- Denselben Fehler nur einmal ausschreiben.
+              --
+              -- Das try/catch je Clip ist richtig, hat aber eine
+              -- Kehrseite: ein Fehler, der ALLE Clips trifft,
+              -- erzeugt hundertvier gleichlautende Zeilen, und
+              -- die eine Ursache geht darin unter.
+              local sErr = getCurrentException()
+              iSkippedClips += 1
 
-        progressEnd()
+              if (sErr != sLastError) then
+              (
+                sLastError = sErr
+                iSameError = 1
+                format "[XFBIN] Clip % '%' skipped: %\n" \
+                       i (XfbinCpp.animName i) sErr
+              )
+              else
+              (
+                iSameError += 1
+                if (iSameError == 2) then
+                (
+                  format "[XFBIN]   (same error on the following clips - "
+                  format "reported once)\n"
+                ) -- end of second occurrence
+              ) -- end of same error check
+            ) -- end of per-clip catch
+          ) -- end of animation loop
+        ) -- end of loop block
+
+        pbSeq.value = 100
 
         -- Once, at the end - not per animation. Walking every
         -- object 104 times would take far longer than the import
@@ -771,6 +920,7 @@ macroScript XfbinImport_Open
         ) -- end of step check
 
         enableSceneRedraw()
+        pbSeq.value = 0
 
         animationRange = interval 0 fAt
 
@@ -778,6 +928,9 @@ macroScript XfbinImport_Open
                          (iKeys as string) + " keys, " + \
                          ((fAt as integer) as string) + " frames, " + \
                          (iStep as string) + " step keys" + \
+                         (if (iSkippedClips > 0) then \
+                            (", " + (iSkippedClips as string) + " skipped") \
+                          else "") + \
                          (if (NT != undefined) then ", note track on scene root." \
                           else ", no note track.")
         lblTime.text   = XfbinCpp.timings()
