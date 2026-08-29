@@ -1,0 +1,21 @@
+// ============================================================
+//  XfbinImport.rc - die Oberflaeche als Ressource
+//
+//  Die .mcr wird in die DLL gelegt und beim Start von dort
+//  registriert. Damit gibt es keine zweite Datei mehr, die
+//  veralten kann: Skript und Plugin sind per Konstruktion
+//  derselbe Stand.
+//
+//  Genau daran sind zwei Runden verlorengegangen - erst
+//  "Unknown property: clearAnims", weil die Skripte neu waren
+//  und die .dlu nicht, dann die Gegenmassnahme, die ein
+//  funktionierendes Plugin blockierte.
+//
+//  Die Datei in scripts\ bleibt der Quelltext und wird weiter
+//  mitinstalliert; wer sie von Hand aendert, ueberschreibt die
+//  eingebettete Fassung. Siehe LibInitialize.
+// ============================================================
+
+#define XFBIN_MCR_RESOURCE 1000
+
+XFBIN_MCR_RESOURCE  RCDATA  "../scripts/XfbinImport.mcr"
