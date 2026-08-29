@@ -1,0 +1,226 @@
+KabutoRedCloak FileLooksCinematic false-positive scan
+Folder: C:\Users\mauri\Desktop\Model -Conversions WIP\Kabuto\KabutoRedCloak
+Tool: D:\Stuff\Warcraft_3_All_Assets\Projects\XFBIN-Import-3ds-max\XFBIN Import\build_tool\Release\xfbindump.exe
+Logic mirror: xfbin_anm.cpp FileLooksCinematic
+  - chunk types: Camera, LightDirc, LightPoint, Ambient, Billboard, Trail
+  - OR nuccChunkBinary whose name contains post-process needles
+  Needles: blur, glare, dof, colorfilter, color_filter, softfocus, soft_focus,
+           bright_rate, brightrate, _omb, shadow
+
+Top-level xfbin count: 13
+Extra/ xfbin count: 0
+
+====================================================================================================
+filename                     cinematic   anims  reason
+----------------------------------------------------------------------------------------------------
+2kbx_x.xfbin                 NO              0  (none)
+2kbxacc1.xfbin               NO              0  (none)
+2kbxacc2.xfbin               NO              0  (none)
+2kbxbod1.xfbin               NO              0  (none)
+2kbxbod1acc.bin.xfbin        NO              0  (none)
+2kbxbod1c.xfbin              YES            37  nuccChunkCamera(name=camera001); nuccChunkTrail(name=2kbxteam_satk00); nuccChunkLightDirc(name=direct01); nuccChunkLightDirc(name=direct01)
+2kbxbod1l.xfbin              YES            50  nuccChunkTrail(name=2kbxcma00); nuccChunkTrail(name=2kbxcmb00); nuccChunkTrail(name=2kbxcmb02); nuccChunkTrail(name=2kbxcmb06); nuccChunkCamera(name=camera001); nuccChunkCamera(name=camera001); nuccChunkCamera(name=camera001); nuccChunkTrail(name=2kbxcmb20); nuccChunkTrail(name=2kbxcmb22); nuccChunkCamera(name=camera001); nuccChunkLightDirc(name=fdirect001); Binary name '2kbxhola1_bright_rate' contains 'bright_rate'; Binary name '2kbxhola1_colorfilter_radial' contains 'colorfilter'; Binary name '2kbxhola1_colorfilter_radial_2' contains 'colorfilter'
+2kbxbod1s.xfbin              YES             6  nuccChunkCamera(name=camera001); nuccChunkTrail(name=2kbxsupa00); nuccChunkTrail(name=2kbxsupcmbint01)
+2kbxkiz.xfbin                NO              0  (none)
+2kbxskl1.xfbin               NO              1  (none)
+2kbxskl2.xfbin               NO              1  (none)
+2kbxspl1.xfbin               YES            14  nuccChunkCamera(name=camera001); nuccChunkLightDirc(name=fdirect001); nuccChunkLightPoint(name=omni001); nuccChunkLightPoint(name=omni002); nuccChunkAmbient(name=2kbxspl1_atk); nuccChunkTrail(name=2kbxspl1_atk); nuccChunkCamera(name=camera001); nuccChunkLightDirc(name=direct001); Binary name '2kbxspl1_atk_blur' contains 'blur'; Binary name '2kbxspl1_atk_bright_rate' contains 'bright_rate'; Binary name '2kbxspl1_atk_colorfilter_directional' contains 'colorfilter'; Binary name '2kbxspl1_atk_colorfilter_directional_2' contains 'colorfilter'; Binary name '2kbxspl1_atk_dof' contains 'dof'; Binary name '2kbxspl1_atk_glare' contains 'glare'; Binary name '2kbxspl1_atk_omb' contains '_omb'; Binary name '2kbxspl1_atk_shadow' contains 'shadow'; Binary name '2kbxspl1_atk_softfocus' contains 'softfocus'; Binary name '2kbxspl1_cut_blur' contains 'blur'; Binary name '2kbxspl1_cut_colorfilter_directional' contains 'colorfilter'; Binary name '2kbxspl1_cut_colorfilter_directional_2' contains 'colorfilter'; Binary name '2kbxspl1_cut_glare' contains 'glare'
+2kbxspl1_x.xfbin             NO              0  (none)
+
+====================================================================================================
+DETAIL
+====================================================================================================
+
+## 2kbx_x.xfbin  size=18088  dump_rc=1
+  FileLooksCinematic would be: False
+  Approx anim count (xfbindump --anims): 0  (Anm chunks: 0)
+  Chunk type counts: {'nuccChunkBinary': 11, 'nuccChunkNull': 12, 'nuccChunkPage': 11}
+  Reasons: (none)
+  Raw ASCII type-string hits in file bytes: (none)
+  Raw ASCII needle hits in file bytes (ANYWHERE): (none)
+
+## 2kbxacc1.xfbin  size=1313646  dump_rc=1
+  FileLooksCinematic would be: False
+  Approx anim count (xfbindump --anims): 0  (Anm chunks: 0)
+  Chunk type counts: {'nuccChunkClump': 2, 'nuccChunkCoord': 58, 'nuccChunkMaterial': 2, 'nuccChunkModel': 2, 'nuccChunkNull': 5, 'nuccChunkPage': 4, 'nuccChunkTexture': 2}
+  Reasons: (none)
+  Raw ASCII type-string hits in file bytes: (none)
+  Raw ASCII needle hits in file bytes (ANYWHERE): (none)
+
+## 2kbxacc2.xfbin  size=2449915  dump_rc=1
+  FileLooksCinematic would be: False
+  Approx anim count (xfbindump --anims): 0  (Anm chunks: 0)
+  Chunk type counts: {'nuccChunkClump': 3, 'nuccChunkCoord': 385, 'nuccChunkMaterial': 14, 'nuccChunkModel': 15, 'nuccChunkNull': 13, 'nuccChunkPage': 12, 'nuccChunkTexture': 9}
+  Reasons: (none)
+  Raw ASCII type-string hits in file bytes: (none)
+  Raw ASCII needle hits in file bytes (ANYWHERE): (none)
+
+## 2kbxbod1.xfbin  size=5990470  dump_rc=1
+  FileLooksCinematic would be: False
+  Approx anim count (xfbindump --anims): 0  (Anm chunks: 0)
+  Chunk type counts: {'nuccChunkClump': 7, 'nuccChunkCoord': 437, 'nuccChunkDynamics': 1, 'nuccChunkMaterial': 20, 'nuccChunkModel': 36, 'nuccChunkNull': 21, 'nuccChunkPage': 20, 'nuccChunkTexture': 12}
+  Reasons: (none)
+  Raw ASCII type-string hits in file bytes: (none)
+  Raw ASCII needle hits in file bytes (ANYWHERE): (none)
+
+## 2kbxbod1acc.bin.xfbin  size=1952  dump_rc=1
+  FileLooksCinematic would be: False
+  Approx anim count (xfbindump --anims): 0  (Anm chunks: 0)
+  Chunk type counts: {'nuccChunkBinary': 1, 'nuccChunkNull': 2, 'nuccChunkPage': 1}
+  Reasons: (none)
+  Raw ASCII type-string hits in file bytes: (none)
+  Raw ASCII needle hits in file bytes (ANYWHERE): (none)
+
+## 2kbxbod1c.xfbin  size=1194348  dump_rc=0
+  FileLooksCinematic would be: True
+  Approx anim count (xfbindump --anims): 37  (Anm chunks: 37)
+  Chunk type counts: {'nuccChunkAnm': 37, 'nuccChunkCamera': 1, 'nuccChunkLightDirc': 2, 'nuccChunkNull': 39, 'nuccChunkPage': 38, 'nuccChunkTrail': 1}
+  Reasons:
+    - nuccChunkCamera(name=camera001)
+    - nuccChunkTrail(name=2kbxteam_satk00)
+    - nuccChunkLightDirc(name=direct01)
+    - nuccChunkLightDirc(name=direct01)
+  Raw ASCII type-string hits in file bytes: ['nuccChunkBillboard', 'nuccChunkCamera', 'nuccChunkLightDirc', 'nuccChunkTrail']
+  Raw ASCII needle hits in file bytes (ANYWHERE): (none)
+
+## 2kbxbod1l.xfbin  size=2902727  dump_rc=0
+  FileLooksCinematic would be: True
+  Approx anim count (xfbindump --anims): 50  (Anm chunks: 50)
+  Chunk type counts: {'nuccChunkAnm': 50, 'nuccChunkBinary': 3, 'nuccChunkCamera': 4, 'nuccChunkLightDirc': 1, 'nuccChunkNull': 72, 'nuccChunkPage': 71, 'nuccChunkParticle': 12, 'nuccChunkTrail': 6}
+  Reasons:
+    - nuccChunkTrail(name=2kbxcma00)
+    - nuccChunkTrail(name=2kbxcmb00)
+    - nuccChunkTrail(name=2kbxcmb02)
+    - nuccChunkTrail(name=2kbxcmb06)
+    - nuccChunkCamera(name=camera001)
+    - nuccChunkCamera(name=camera001)
+    - nuccChunkCamera(name=camera001)
+    - nuccChunkTrail(name=2kbxcmb20)
+    - nuccChunkTrail(name=2kbxcmb22)
+    - nuccChunkCamera(name=camera001)
+    - nuccChunkLightDirc(name=fdirect001)
+    - Binary name '2kbxhola1_bright_rate' contains 'bright_rate'
+    - Binary name '2kbxhola1_colorfilter_radial' contains 'colorfilter'
+    - Binary name '2kbxhola1_colorfilter_radial_2' contains 'colorfilter'
+  Raw ASCII type-string hits in file bytes: ['nuccChunkBillboard', 'nuccChunkCamera', 'nuccChunkLightDirc', 'nuccChunkTrail']
+  Raw ASCII needle hits in file bytes (ANYWHERE): ['colorfilter', 'color_filter', 'bright_rate']
+
+## 2kbxbod1s.xfbin  size=323248  dump_rc=0
+  FileLooksCinematic would be: True
+  Approx anim count (xfbindump --anims): 6  (Anm chunks: 6)
+  Chunk type counts: {'nuccChunkAnm': 6, 'nuccChunkCamera': 1, 'nuccChunkNull': 9, 'nuccChunkPage': 8, 'nuccChunkTrail': 2}
+  Reasons:
+    - nuccChunkCamera(name=camera001)
+    - nuccChunkTrail(name=2kbxsupa00)
+    - nuccChunkTrail(name=2kbxsupcmbint01)
+  Raw ASCII type-string hits in file bytes: ['nuccChunkBillboard', 'nuccChunkCamera', 'nuccChunkTrail']
+  Raw ASCII needle hits in file bytes (ANYWHERE): (none)
+
+## 2kbxkiz.xfbin  size=118557  dump_rc=1
+  FileLooksCinematic would be: False
+  Approx anim count (xfbindump --anims): 0  (Anm chunks: 0)
+  Chunk type counts: {'nuccChunkClump': 1, 'nuccChunkCoord': 191, 'nuccChunkMaterial': 1, 'nuccChunkModel': 2, 'nuccChunkNull': 2, 'nuccChunkPage': 1}
+  Reasons: (none)
+  Raw ASCII type-string hits in file bytes: (none)
+  Raw ASCII needle hits in file bytes (ANYWHERE): (none)
+
+## 2kbxskl1.xfbin  size=153892  dump_rc=0
+  FileLooksCinematic would be: False
+  Approx anim count (xfbindump --anims): 1  (Anm chunks: 1)
+  Chunk type counts: {'nuccChunkAnm': 1, 'nuccChunkNull': 3, 'nuccChunkPage': 2, 'nuccChunkParticle': 1}
+  Reasons: (none)
+  Raw ASCII type-string hits in file bytes: (none)
+  Raw ASCII needle hits in file bytes (ANYWHERE): (none)
+
+## 2kbxskl2.xfbin  size=82532  dump_rc=0
+  FileLooksCinematic would be: False
+  Approx anim count (xfbindump --anims): 1  (Anm chunks: 1)
+  Chunk type counts: {'nuccChunkAnm': 1, 'nuccChunkNull': 3, 'nuccChunkPage': 2, 'nuccChunkParticle': 1}
+  Reasons: (none)
+  Raw ASCII type-string hits in file bytes: ['nuccChunkBillboard']
+  Raw ASCII needle hits in file bytes (ANYWHERE): (none)
+
+## 2kbxspl1.xfbin  size=3072043  dump_rc=0
+  FileLooksCinematic would be: True
+  Approx anim count (xfbindump --anims): 14  (Anm chunks: 14)
+  Chunk type counts: {'nuccChunkAmbient': 1, 'nuccChunkAnm': 14, 'nuccChunkBinary': 13, 'nuccChunkCamera': 2, 'nuccChunkLightDirc': 2, 'nuccChunkLightPoint': 2, 'nuccChunkNull': 32, 'nuccChunkPage': 31, 'nuccChunkParticle': 3, 'nuccChunkTrail': 1}
+  Reasons:
+    - nuccChunkCamera(name=camera001)
+    - nuccChunkLightDirc(name=fdirect001)
+    - nuccChunkLightPoint(name=omni001)
+    - nuccChunkLightPoint(name=omni002)
+    - nuccChunkAmbient(name=2kbxspl1_atk)
+    - nuccChunkTrail(name=2kbxspl1_atk)
+    - nuccChunkCamera(name=camera001)
+    - nuccChunkLightDirc(name=direct001)
+    - Binary name '2kbxspl1_atk_blur' contains 'blur'
+    - Binary name '2kbxspl1_atk_bright_rate' contains 'bright_rate'
+    - Binary name '2kbxspl1_atk_colorfilter_directional' contains 'colorfilter'
+    - Binary name '2kbxspl1_atk_colorfilter_directional_2' contains 'colorfilter'
+    - Binary name '2kbxspl1_atk_dof' contains 'dof'
+    - Binary name '2kbxspl1_atk_glare' contains 'glare'
+    - Binary name '2kbxspl1_atk_omb' contains '_omb'
+    - Binary name '2kbxspl1_atk_shadow' contains 'shadow'
+    - Binary name '2kbxspl1_atk_softfocus' contains 'softfocus'
+    - Binary name '2kbxspl1_cut_blur' contains 'blur'
+    - Binary name '2kbxspl1_cut_colorfilter_directional' contains 'colorfilter'
+    - Binary name '2kbxspl1_cut_colorfilter_directional_2' contains 'colorfilter'
+    - Binary name '2kbxspl1_cut_glare' contains 'glare'
+  Raw ASCII type-string hits in file bytes: ['nuccChunkAmbient', 'nuccChunkBillboard', 'nuccChunkCamera', 'nuccChunkLightDirc', 'nuccChunkLightPoint', 'nuccChunkTrail']
+  Raw ASCII needle hits in file bytes (ANYWHERE): ['blur', 'glare', 'dof', 'colorfilter', 'color_filter', 'softfocus', 'bright_rate', '_omb', 'shadow']
+
+## 2kbxspl1_x.xfbin  size=11214  dump_rc=1
+  FileLooksCinematic would be: False
+  Approx anim count (xfbindump --anims): 0  (Anm chunks: 0)
+  Chunk type counts: {'nuccChunkBinary': 7, 'nuccChunkNull': 8, 'nuccChunkPage': 7}
+  Reasons: (none)
+  Raw ASCII type-string hits in file bytes: (none)
+  Raw ASCII needle hits in file bytes (ANYWHERE): (none)
+
+====================================================================================================
+FOCUS: 2kbxskl* and related
+====================================================================================================
+  2kbxskl1.xfbin: cinematic=NO anims=1 reasons=(none)
+  2kbxskl2.xfbin: cinematic=NO anims=1 reasons=(none)
+
+SUMMARY: flagged=4 / 13; not_flagged=9
+  FLAGGED: 2kbxbod1c.xfbin anims=37 :: nuccChunkCamera(name=camera001); nuccChunkTrail(name=2kbxteam_satk00); nuccChunkLightDirc(name=direct01); nuccChunkLightDirc(name=direct01)
+  FLAGGED: 2kbxbod1l.xfbin anims=50 :: nuccChunkTrail(name=2kbxcma00); nuccChunkTrail(name=2kbxcmb00); nuccChunkTrail(name=2kbxcmb02); nuccChunkTrail(name=2kbxcmb06); nuccChunkCamera(name=camera001); nuccChunkCamera(name=camera001); nuccChunkCamera(name=camera001); nuccChunkTrail(name=2kbxcmb20); nuccChunkTrail(name=2kbxcmb22); nuccChunkCamera(name=camera001); nuccChunkLightDirc(name=fdirect001); Binary name '2kbxhola1_bright_rate' contains 'bright_rate'; Binary name '2kbxhola1_colorfilter_radial' contains 'colorfilter'; Binary name '2kbxhola1_colorfilter_radial_2' contains 'colorfilter'
+  FLAGGED: 2kbxbod1s.xfbin anims=6 :: nuccChunkCamera(name=camera001); nuccChunkTrail(name=2kbxsupa00); nuccChunkTrail(name=2kbxsupcmbint01)
+  FLAGGED: 2kbxspl1.xfbin anims=14 :: nuccChunkCamera(name=camera001); nuccChunkLightDirc(name=fdirect001); nuccChunkLightPoint(name=omni001); nuccChunkLightPoint(name=omni002); nuccChunkAmbient(name=2kbxspl1_atk); nuccChunkTrail(name=2kbxspl1_atk); nuccChunkCamera(name=camera001); nuccChunkLightDirc(name=direct001); Binary name '2kbxspl1_atk_blur' contains 'blur'; Binary name '2kbxspl1_atk_bright_rate' contains 'bright_rate'; Binary name '2kbxspl1_atk_colorfilter_directional' contains 'colorfilter'; Binary name '2kbxspl1_atk_colorfilter_directional_2' contains 'colorfilter'; Binary name '2kbxspl1_atk_dof' contains 'dof'; Binary name '2kbxspl1_atk_glare' contains 'glare'; Binary name '2kbxspl1_atk_omb' contains '_omb'; Binary name '2kbxspl1_atk_shadow' contains 'shadow'; Binary name '2kbxspl1_atk_softfocus' contains 'softfocus'; Binary name '2kbxspl1_cut_blur' contains 'blur'; Binary name '2kbxspl1_cut_colorfilter_directional' contains 'colorfilter'; Binary name '2kbxspl1_cut_colorfilter_directional_2' contains 'colorfilter'; Binary name '2kbxspl1_cut_glare' contains 'glare'
+
+====================================================================================================
+CLEAN TABLE (deduped reasons)
+====================================================================================================
+filename                     cinematic_flag_would_be   anims  reason
+----------------------------------------------------------------------------------------------------
+2kbx_x.xfbin                 NO                            0  (none)
+2kbxacc1.xfbin               NO                            0  (none)
+2kbxacc2.xfbin               NO                            0  (none)
+2kbxbod1.xfbin               NO                            0  (none)
+2kbxbod1acc.bin.xfbin        NO                            0  (none)
+2kbxbod1c.xfbin              YES                          37  nuccChunkCamera; nuccChunkTrail; nuccChunkLightDirc
+2kbxbod1l.xfbin              YES                          50  nuccChunkTrail; nuccChunkCamera; nuccChunkLightDirc; Binary needles: bright_rate,colorfilter
+2kbxbod1s.xfbin              YES                           6  nuccChunkCamera; nuccChunkTrail
+2kbxkiz.xfbin                NO                            0  (none)
+2kbxskl1.xfbin               NO                            1  (none)
+2kbxskl2.xfbin               NO                            1  (none)
+2kbxspl1.xfbin               YES                          14  nuccChunkCamera; nuccChunkLightDirc; nuccChunkLightPoint; nuccChunkAmbient; nuccChunkTrail; Binary needles: blur,bright_rate,colorfilter,dof,glare,_omb,shadow,softfocus
+2kbxspl1_x.xfbin             NO                            0  (none)
+
+VERDICT
+----------------------------------------
+2kbxskl1 / 2kbxskl2: NOT flagged (cinematic=NO). Normal combat skl packs OK for this set.
+False-positive risk for 'Load all as sequence': body packs that embed Camera/Trail/Light
+alongside many bone Anm clips:
+  - 2kbxbod1c: YES, 37 anims (Camera+Trail+LightDirc) â€” all 37 marked cinematicSource
+  - 2kbxbod1l: YES, 50 anims (Camera+Trail+LightDirc+Binary post FX) â€” all 50 skipped from seq
+  - 2kbxbod1s: YES,  6 anims (Camera+Trail)
+  - 2kbxspl1: YES, 14 anims â€” intended (special-move FX bundle)
+Meshes/acc (bod1, acc*, kiz, _x, spl1_x): NO / 0 anims â€” irrelevant to sequence skip.
+Extra/: present as top-level dir but contains 0 .xfbin files.
+
+Root cause of 'skip too many animations' after 1.9.4 for this Kabuto set:
+FileLooksCinematic is file-wide: any Camera/Trail/Light/Ambient/Billboard OR Binary
+post-process name marks EVERY Anm in that XFBIN as cinematicSource (excluded from sequence).
+bod1l alone excludes ~50 combat-ish clips; bod1c another ~37.
