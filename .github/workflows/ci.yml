@@ -20,9 +20,9 @@ jobs:
   checks:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -46,7 +46,7 @@ jobs:
           cmake -S . -B build -A x64 -DXFBIN_BUILD_PLUGIN=OFF -DXFBIN_BUILD_TOOL=ON
           cmake --build build --config Release
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: xfbindump
           path: build/Release/xfbindump.exe
