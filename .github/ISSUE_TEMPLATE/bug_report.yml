@@ -1,0 +1,72 @@
+name: Bug report
+description: Something does not import correctly, or the plugin does not load
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. The more of the fields below you fill in,
+        the faster it can be reproduced.
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      description: Type `XfbinCpp.version()` in the MAXScript Listener
+      placeholder: "2.1.6"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: max-version
+    attributes:
+      label: 3ds Max version
+      options:
+        - "2016"
+        - "2017"
+        - "2018"
+        - "2019"
+        - "2020"
+        - "2021"
+        - "2022"
+        - "2023"
+        - "2024"
+        - "2025"
+        - "2026"
+        - "2027"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install it?
+      options:
+        - Setup .exe
+        - ZIP with Install.bat
+        - Copied the folder by hand
+        - Built from source
+    validations:
+      required: true
+
+  - type: input
+    id: game
+    attributes:
+      label: Game and file
+      description: Which game, and which character or file (e.g. `1hakbod1.xfbin`)
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+
+  - type: textarea
+    id: listener
+    attributes:
+      label: MAXScript Listener output
+      description: Everything the Listener printed during the import (F11 opens it)
+      render: text

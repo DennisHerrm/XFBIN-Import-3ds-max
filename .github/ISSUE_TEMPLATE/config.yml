@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Working in Blender?
+    url: https://github.com/Al-Hydra/Blender-XFBIN-Importer
+    about: The Blender XFBIN Importer does import and export - use that one for Blender.
