@@ -1,0 +1,53 @@
+# Checks that need no 3ds Max SDK.
+#
+# The plugin itself cannot be built here - the Max SDKs are not
+# redistributable. What runs is everything else: the parser as the
+# standalone xfbindump.exe, and the four checks from tools/ that
+# guard the MaxScript files and the plugin API.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: MaxScript checks
+        run: python tools/PRUEFE_SCRIPTS.py
+
+      - name: Plugin API consistency
+        run: python tools/PRUEFE_API.py
+
+      - name: Include check
+        run: python tools/PRUEFE_INCLUDES.py
+
+      - name: Message check
+        run: python tools/PRUEFE_MELDUNGEN.py
+
+      - name: Build xfbindump (parser, no Max SDK)
+        run: |
+          cmake -S . -B build -A x64 -DXFBIN_BUILD_PLUGIN=OFF -DXFBIN_BUILD_TOOL=ON
+          cmake --build build --config Release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xfbindump
+          path: build/Release/xfbindump.exe
+          if-no-files-found: error

@@ -1,7 +1,9 @@
 # XFBIN Import for 3ds Max
 
-[![3ds Max](https://img.shields.io/badge/3ds%20Max-2016%20–%202027-0696D7)](#building)
-[![Language](https://img.shields.io/badge/C%2B%2B-17-00599C)](#building)
+[![Download](https://img.shields.io/github/v/release/DennisHerrm/XFBIN-Import-3ds-max?label=download&color=2ea043)](https://github.com/DennisHerrm/XFBIN-Import-3ds-max/releases/latest)
+[![3ds Max](https://img.shields.io/badge/3ds%20Max-2016%20–%202027-0696D7)](#installing)
+[![CI](https://github.com/DennisHerrm/XFBIN-Import-3ds-max/actions/workflows/ci.yml/badge.svg)](https://github.com/DennisHerrm/XFBIN-Import-3ds-max/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Verified](https://img.shields.io/badge/parser-173k%20lines%20verified-brightgreen)](#how-it-was-verified)
 
 A native 3ds Max plugin that imports CyberConnect2 **XFBIN** files — the
@@ -18,6 +20,12 @@ Built on the format research of the
 [![Watch the presentation](https://img.youtube.com/vi/R0Xpl9ZzdVA/maxresdefault.jpg)](https://www.youtube.com/watch?v=R0Xpl9ZzdVA)
 
 <sub>▶ Click to watch the presentation on YouTube</sub>
+
+<p align="center">
+  <a href="https://github.com/DennisHerrm/XFBIN-Import-3ds-max/releases/latest"><b>⬇&nbsp; Download the latest version</b></a>
+  &nbsp;·&nbsp; <a href="#installing">Installation guide</a>
+  &nbsp;·&nbsp; <a href="CHANGELOG.md">Changelog</a>
+</p>
 
 ---
 
@@ -49,27 +57,46 @@ few seconds.
 > Close 3ds Max first. While it is running the plugin file is locked
 > and cannot be replaced.
 
-### What is in this repository
+All downloads are on the **[Releases page](https://github.com/DennisHerrm/XFBIN-Import-3ds-max/releases/latest)**.
+Do not use *Code → Download ZIP* — that is the source code, not the
+plugin.
 
-| Folder | What it is |
-| :--- | :--- |
-| `XfbinImport/` | **The ready-made plugin.** Copy this folder as it is — nothing to build. |
-| `XFBIN Import/` | The full source, build scripts and verification tools. |
+### Option 1 — Setup (recommended)
 
-If you only want to use the importer, you need the first one.
+1. Download **`XfbinImport-<version>-Setup.exe`** from the
+   [latest release](https://github.com/DennisHerrm/XFBIN-Import-3ds-max/releases/latest).
+2. Run it. It installs for your Windows account only, so no
+   administrator rights are needed. (To install for every user on the
+   PC, pick *Install for all users* in the first dialog.)
+3. Start 3ds Max and open **DH Tools → XFBIN Import**.
 
-### The quick way
+**Updating:** run the Setup of the newer version — it replaces the old
+one. **Uninstalling:** *Windows Settings → Apps → Installed apps →
+XFBIN Import for 3ds Max*.
 
-1. Download the repository (**Code → Download ZIP**) or a release.
-2. Copy the whole `XfbinImport` folder into
-   `%APPDATA%\Autodesk\ApplicationPlugins`.
-3. Start 3ds Max. The tool appears under **DH Tools → XFBIN Import**.
+One installer covers every 3ds Max version from 2016 to 2027; Max picks
+the matching plugin build by itself.
 
-That is all — the folder already has the right shape. If you built from
-source instead, `INSTALLIERE.bat` does the copying for you, and
-`DEINSTALLIERE.bat` removes it again.
+> [!NOTE]
+> The installer is not code-signed yet. On a fresh download Windows
+> SmartScreen may say *"Windows protected your PC"* — click
+> **More info → Run anyway**. To make sure the file is the original,
+> compare its hash with `SHA256SUMS.txt` from the release:
+>
+> ```powershell
+> Get-FileHash .\XfbinImport-2.1.6-Setup.exe
+> ```
 
-### Where it goes
+### Option 2 — ZIP, without an installer
+
+1. Download **`XfbinImport-<version>.zip`** and extract it.
+2. Double-click **`Install.bat`**. `Uninstall.bat` removes it again.
+
+Or copy the `XfbinImport` folder from the ZIP by hand into
+`%APPDATA%\Autodesk\ApplicationPlugins` — see below.
+
+<details>
+<summary><b>Where the plugin goes, and what the folder must look like</b></summary>
 
 Paste this into the Explorer address bar:
 
@@ -79,10 +106,10 @@ Paste this into the Explorer address bar:
 
 It expands to `C:\Users\<you>\AppData\Roaming\Autodesk\ApplicationPlugins`.
 3ds Max scans this folder on every start. It is the per-user location,
-so no administrator rights are needed.
+so no administrator rights are needed. (An all-users Setup installs to
+`%ProgramData%\Autodesk\ApplicationPlugins` instead.)
 
-The `XfbinImport` folder from this repository has to end up looking
-exactly like this:
+The `XfbinImport` folder has to end up looking exactly like this:
 
 ```text
 %APPDATA%\Autodesk\ApplicationPlugins\
@@ -110,23 +137,27 @@ exactly like this:
 >
 > **The version folders are not interchangeable.** Each `.dlu` is built
 > against its own SDK — loading a 2024 build in 2026 crashes Max rather
-> than reporting an error. You only need the folder matching your Max
-> version; the rest can be deleted.
+> than reporting an error.
 
-Start 3ds Max. The Listener should show:
+</details>
+
+After starting 3ds Max, the MAXScript Listener shows:
 
 ```
-XFBIN Import 1.9.2: Plugin geladen, Menue-Callback angemeldet.
+XFBIN Import 2.1.6: Plugin geladen, Menue-Callback angemeldet.
 ```
+
+(on 3ds Max 2016 – 2024: `... Menue registriert (menuMan).`)
 
 ---
 
 ## Starting it
 
-Three ways, all equivalent:
+Four ways, all equivalent:
 
 | Way | Where | Note |
 | :--- | :--- | :--- |
+| **File → Import** | pick any `.xfbin` of the character | The plugin takes the *folder* of that file, so one click covers model, accessories and animations |
 | **Menu** | *DH Tools → XFBIN Import* | On Max 2025+ it may take a second restart — the menu registers through a callback that fires on the next rebuild |
 | **Customize** | *Customize → Customize User Interface → Category "DH Tools"* | Available immediately; put it on a toolbar or a shortcut |
 | **Drag & drop** | `XFBIN_Import.ms` into a viewport | Opens the window right away, also works without installing |
@@ -160,6 +191,10 @@ XfbinCpp.version()
 XFBIN characters are spread over several files — the body, the
 animations, and often accessories such as weapons. So you pick the
 **folder**, not a single file.
+
+You can also reach this through **File → Import** and pick any single
+`.xfbin` — the plugin takes the folder that file sits in and continues
+from step 2.
 
 1. **Browse…** and choose the folder holding the `.xfbin` files.
    Every file is read and sorted by content: `nuccChunkClump` means a
@@ -234,7 +269,7 @@ is not, and Warcraft 3 has no half-visible object either.
 
 ---
 
-## Building
+## Building from source
 
 Requires Visual Studio 2022 or newer and at least one 3ds Max SDK in the
 default location `C:\Program Files\Autodesk\3ds Max <year> SDK\maxsdk`.
@@ -242,7 +277,8 @@ default location `C:\Program Files\Autodesk\3ds Max <year> SDK\maxsdk`.
 ```bat
 BAUE_ALLE.bat          :: builds every SDK it finds, 2016 - 2027
 BAUE_ALLE.bat 2024     :: builds one version only
-INSTALLIERE.bat        :: packages and installs
+INSTALLIERE.bat        :: packages and installs for the current user
+DEINSTALLIERE.bat      :: removes it again
 ```
 
 Versions without an installed SDK are skipped, not treated as errors.
@@ -259,6 +295,39 @@ xfbindump.exe file.xfbin --bones --meshes   :: skeleton and geometry stats
 xfbindump.exe file.xfbin --anims-o out.txt  :: full animation dump
 xfbindump.exe file.xfbin --tex-o folder     :: extract textures as DDS
 ```
+
+### Repository layout
+
+| Path | Contents |
+| :--- | :--- |
+| `src/` | The C++ plugin and the XFBIN / NUD / NUT / animation parsers |
+| `scripts/` | MaxScript user interface, launcher and menu registration |
+| `package/` | `PackageContents.xml` — the Autodesk application package manifest |
+| `installer/` | Inno Setup script and the `Install.bat` / `Uninstall.bat` for the ZIP |
+| `tools/` | Verification tools and in-Max check scripts (see below) |
+| `.github/` | CI workflow and issue templates |
+| `CHANGELOG.md` | Every version and what changed (German) |
+| `DEVNOTES.md` | Design decisions and internals (German) |
+
+### Making a release
+
+Needs [Inno Setup 6](https://jrsoftware.org/isinfo.php)
+(`winget install JRSoftware.InnoSetup`).
+
+```bat
+python tools\VERSION_SETZEN.py 2.1.7   :: sets the version everywhere
+BAUE_ALLE.bat                          :: all twelve Max versions
+ERSTELLE_RELEASE.bat                   :: dist\ -> Setup.exe, .zip, SHA256SUMS.txt
+```
+
+The script prints the matching `gh release create` command at the end.
+It refuses to build a release unless all twelve Max versions are present
+and `PackageContents.xml` carries the same version as the plugin header.
+
+Compiled files are never committed — they belong on the Releases page.
+CI builds the parser and runs the checks on every push; the plugin
+itself cannot be built there because the Max SDKs are not
+redistributable.
 
 ---
 
@@ -344,6 +413,12 @@ project exists for people whose pipeline runs through 3ds Max.
 
 XFBIN, NUCC, NUD and NUT are formats of CyberConnect2. This project is
 unaffiliated and is meant for modding and preservation.
+
+---
+
+## License
+
+[MIT](LICENSE) © 2026 DennisH
 
 ---
 
