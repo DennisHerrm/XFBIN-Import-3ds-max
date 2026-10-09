@@ -271,6 +271,7 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
     const DWORD t0 = GetTickCount();
 
     x.Close();
+    x.TexturIndexLeeren();
     EffekteZuruecksetzen();
     if (o.leeren) {
         FuehreSkript(L"delete objects");
@@ -283,6 +284,9 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
     x.ClearAnims();
 
     const std::string clump = xfbin::ClumpName(f);
+    // Code des Modells - meist der der Figur, bei Fassungen ohne
+    // eigenes Modell ein anderer (Kurama Link 4nrt -> 3nrtbod1).
+    const std::string mc = clump.substr(0, 4);
     std::wstring fehler;
     size_t dateien = 0;
 
@@ -299,12 +303,12 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
         for (const xfbin::Clump& c : cl) {
             if (c.name != clump) continue;
             for (const xfbin::CoordNode& n : c.nodes)
-                if (n.name.size() >= f.code.size() + 2 && n.name.compare(0, f.code.size(), f.code) == 0) { zielPraefix = n.name.substr(0, f.code.size() + 2); break; }
+                if (n.name.size() >= mc.size() + 2 && n.name.compare(0, mc.size(), mc) == 0) { zielPraefix = n.name.substr(0, mc.size() + 2); break; }
         }
     }
     auto praefixVon = [&](const xfbin::AnmClumpRef& r) {
         for (const std::string& b : r.boneNames)
-            if (b.size() >= f.code.size() + 2 && b.compare(0, f.code.size(), f.code) == 0) return b.substr(0, f.code.size() + 2);
+            if (b.size() >= mc.size() + 2 && b.compare(0, mc.size(), mc) == 0) return b.substr(0, mc.size() + 2);
         return std::string();
     };
 
@@ -323,7 +327,7 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
         //   * die Animation die Figur nicht selbst nennt ("1nrtskl2_atk"
         //     nennt 1nrtbod1 UND 1nrtbod2).
         for (const std::string& c : x.AnimClumpNames(von)) {
-            const std::string kopf = f.code + "bod";
+            const std::string kopf = mc + "bod";
             if (c == clump || c.size() <= kopf.size() || c.compare(0, kopf.size(), kopf) != 0) continue;
             if (!std::all_of(c.begin() + static_cast<std::ptrdiff_t>(kopf.size()), c.end(),
                              [](char ch) { return ch >= '0' && ch <= '9'; })) continue;
@@ -346,7 +350,7 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
         const size_t von = x.Anims().size();
         x.ParseAnimsAppend();
         const std::string cmn = OhneEndung(xfbin::DateiName(f.gemeinsam));     // "1cmnbod1"
-        x.RetargetAnims(von, cmn, clump, cmn.substr(0, 4), f.code);              // 1cmn00t0 x -> 1nrt00t0 x
+        x.RetargetAnims(von, cmn, clump, cmn.substr(0, 4), mc);                  // 1cmn00t0 x -> 1nrt00t0 x
         const size_t behalten = x.KeepAnimsFor(von, clump);
         x.TagAnims(von, "Reactions");
         Log("  %s: %zu Reaktionen uebertragen", f.gemeinsam.c_str(), behalten);
@@ -375,7 +379,7 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
     const std::vector<std::string> animClumps = x.AnimClumpNames(0);
     for (const std::string& c : animClumps) {
         if (c == clump) continue;
-        const bool eigen = c.compare(0, f.code.size(), f.code) == 0;
+        const bool eigen = c.compare(0, f.code.size(), f.code) == 0 || c.compare(0, mc.size(), mc) == 0;
         const bool form = !eigen && IstKoerper(c);
         if (!eigen && !form) continue;
         const std::string p = "data/spc/" + c + ".xfbin";
@@ -412,7 +416,7 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
             if (offen.empty()) break;
             const std::string n = xfbin::DateiName(p);
             if (p.compare(0, 9, "data/spc/") != 0 || p.find('/', 9) != std::string::npos) continue;
-            if (n.compare(0, f.code.size(), f.code) != 0 || n.find(".bin") != std::string::npos) continue;
+            if ((n.compare(0, f.code.size(), f.code) != 0 && n.compare(0, mc.size(), mc) != 0) || n.find(".bin") != std::string::npos) continue;
             if (std::find(modelle.begin(), modelle.end(), p) != modelle.end()) continue;
             std::vector<uint8_t> b;
             std::string fe;
@@ -530,6 +534,60 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
         std::string elog;
         partikelKnoten = EffekteAnbinden(x, d, texOrdner, o.massstab, effektClumps, elog);
         Log("  Partikel: %zu Emitter, %zu Effekt-Animationen - %s", ev.emitter, ev.animsFx, elog.c_str());
+    }
+
+    // --- 2d. Texturen aus anderen Dateien --------------------
+    // Effekte nehmen ihre Texturen meist aus der gemeinsamen
+    // Bibliothek 1efcmn.xfbin (1efc_board01, 1efc_fire07 ...), ein
+    // Doppelgaenger die Koerpertextur der Figur. Was noch fehlt,
+    // wird gezielt gesucht: erst die ueblichen Verdaechtigen, dann
+    // die Dateien der Figur, dann alle Effektdateien.
+    if (o.texturen && !texOrdner.empty()) {
+        std::set<std::string> offen = x.OffeneTexturNamen();
+        if (!offen.empty()) {
+            const size_t vorher = offen.size();
+            std::vector<std::string> kandidaten;
+            for (const std::string& p : { "data/effect/" + f.code.substr(0, 1) + "efcmn.xfbin", std::string("data/effect/1efcmn.xfbin"), f.modell })
+                if (d.Gibt(p) && std::find(kandidaten.begin(), kandidaten.end(), p) == kandidaten.end()) kandidaten.push_back(p);
+            for (const std::string& p : d.Pfade()) {
+                const bool spc = p.compare(0, 9, "data/spc/") == 0 && p.find('/', 9) == std::string::npos &&
+                                 (p.compare(9, f.code.size(), f.code) == 0 || p.compare(9, mc.size(), mc) == 0);
+                if (spc && p.find(".bin") == std::string::npos) kandidaten.push_back(p);
+            }
+            for (const std::string& p : d.Pfade())
+                if (p.compare(0, 12, "data/effect/") == 0 && p.find('/', 12) == std::string::npos) kandidaten.push_back(p);
+            // zuletzt die Effektdateien anderer Figuren - Hokage-Naruto
+            // (7nrteff1) leiht sich eine Textur von THE LAST (6nrteff1)
+            for (const std::string& p : d.Pfade()) {
+                if (p.compare(0, 9, "data/spc/") != 0 || p.find('/', 9) != std::string::npos) continue;
+                const std::string n = xfbin::DateiName(p);
+                if (n.size() > 7 && n.compare(4, 3, "eff") == 0 && n.find(".bin") == std::string::npos) kandidaten.push_back(p);
+            }
+            std::set<std::string> gesehen;
+            int dateienMitTreffer = 0;
+            for (const std::string& p : kandidaten) {
+                if (offen.empty()) break;
+                if (!gesehen.insert(p).second) continue;
+                std::vector<uint8_t> b;
+                std::string fe;
+                xfbin::XfbinFile kopf;
+                if (!d.Lies(p, b, fe) || !xfbin::ReadXfbinBuffer(b.data(), b.size(), kopf).ok) continue;
+                bool treffer = false;
+                for (const xfbin::XfbinPage& pg : kopf.pages)
+                    for (const xfbin::XfbinChunk& c : pg.chunks) {
+                        if (c.type == nullptr || c.name == nullptr || *c.type != "nuccChunkTexture" || c.data.size() < 32) continue;
+                        if (offen.erase(xfbin::Klein(*c.name))) treffer = true;
+                    }
+                if (!treffer || x.OpenBuffer(b, Breit(p)) < 0) continue;
+                texturen += x.ExportTextures(texOrdner.c_str());
+                ++dateienMitTreffer;
+            }
+            const int n = x.TexturenNachtragen();
+            std::string rest;
+            for (const std::string& t : offen) rest += " " + t;
+            Log("  Texturen aus anderen Dateien: %zu gesucht, %d Materialien nachgetragen aus %d Dateien%s%s", vorher, n,
+                dateienMitTreffer, offen.empty() ? "" : " - nicht im Spiel:", rest.c_str());
+        }
     }
 
     // --- 3. Ebenen, Kennzeichnung, Material-Editor ------------

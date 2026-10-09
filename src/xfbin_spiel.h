@@ -92,7 +92,8 @@ private:
 //  Katalog
 // ------------------------------------------------------------
 enum FigurArt {
-    kArtFigur  = 0,   // spielbar (Code beginnt mit 1, 2 oder 3)
+    kArtFigur  = 0,   // spielbar: in der Figurenauswahl des Spiels
+                      // (playerSettingParam), sonst Code 1, 2 oder 3
     kArtAndere = 1,   // Bosse, Gegner, Sonderformen
     kArtAlle   = 2,
 };
@@ -101,6 +102,9 @@ struct FigurEintrag {
     std::string code;                // "1nrt"
     int         kostuem = 1;         // die N aus bodN
     std::string modell;              // "data/spc/1nrtbod1.xfbin"
+    std::string clump;               // leer = code + "bod" + kostuem; sonst das
+                                     // Modell einer anderen Fassung ("4nrt"
+                                     // - Kurama Link - benutzt "3nrtbod1")
     std::vector<std::string> anims;  // eigene Animationsdateien
     std::string gemeinsam;           // geteilte Reaktionen, z.B. data/spc/1cmnbod1.xfbin
     std::string name;                // "Naruto Uzumaki"
@@ -114,6 +118,11 @@ struct Katalog {
 };
 
 Katalog BaueKatalog(const Spieldaten& daten);
+
+// Namen der waehlbaren Fassungen, so wie das Spiel sie zeigt
+// (Storm 4, Connections): Code -> "Naruto Uzumaki (Baryon Mode)".
+// Leer, wenn das Spiel die Tabellen nicht hat.
+std::map<std::string, std::string> SpielNamenLesen(const Spieldaten& daten);
 
 // Name des Skelett-Clumps einer Figur, so wie er im Modell und in
 // den Animationen steht: "1nrtbod1".

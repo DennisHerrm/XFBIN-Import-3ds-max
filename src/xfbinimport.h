@@ -474,6 +474,15 @@ public:
     int ExportTextures(const MCHAR* directory);
     int BuildMaterials(const MCHAR* directory);
 
+    // Texturen ueber Dateigrenzen: jede exportierte DDS kommt in einen
+    // Index (Name klein -> Pfad). Materialien, deren Textur in keiner
+    // bisher gelesenen Datei lag, merkt sich BuildMaterials; nachdem
+    // weitere Dateien exportiert wurden, traegt TexturenNachtragen
+    // sie ein. Der Index gilt fuer einen Import.
+    void TexturIndexLeeren() { texturIndex_.clear(); offeneTexturen_.clear(); }
+    std::set<std::string> OffeneTexturNamen() const;
+    int TexturenNachtragen();
+
     // --- 3.0: die C++-Fenster, und dieselben Ablaeufe fuer Tests ---
     int ShowDialog();
     int ShowAnimDialog();
@@ -617,6 +626,8 @@ private:
     std::vector<xfbin::XfbinTexture>  textures_;
     std::vector<xfbin::XfbinMaterial> materials_;
     std::vector<std::string>          textureFiles_;   // parallel zu textures_
+    std::map<std::string, std::wstring> texturIndex_;             // Texturname klein -> DDS
+    std::vector<std::pair<AnimHandle, std::string>> offeneTexturen_; // Material, Texturname klein
     bool texturesParsed_ = false;
 
     // Knoten, die buildMeshes angelegt hat, mit dem Index ihres

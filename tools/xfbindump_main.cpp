@@ -29,6 +29,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -114,6 +115,55 @@ int SpielBefehl(int argc, char** argv) {
                 for (const std::string& a : f.anims) std::cout << "    " << xfbin::AnimGruppe(f, a) << "\t" << a << "\n";
         }
         std::cout << n << " von " << k.figuren.size() << " Figuren\n";
+        return 0;
+    }
+
+    if (befehl == "texfehlt" && argc >= 5) {
+        // texfehlt <datei>: Texturen, auf die Materialien zeigen, die
+        // nicht in der Datei liegen - und wo im Spiel sie stehen
+        std::vector<uint8_t> b;
+        xfbin::XfbinFile x;
+        if (!daten.Lies(argv[4], b, fehler) || !xfbin::ReadXfbinBuffer(b.data(), b.size(), x).ok) { std::cerr << fehler << "\n"; return 1; }
+        std::vector<xfbin::XfbinTexture> tex;
+        std::vector<xfbin::XfbinMaterial> mats;
+        std::string e, w;
+        xfbin::ParseTextures(x, tex, e, w);
+        xfbin::ParseMaterials(x, mats, e, w);
+        std::set<std::string> da, fehlt;
+        for (const auto& t : tex) da.insert(xfbin::Klein(t.name));
+        for (const auto& m : mats) {
+            const std::string t = m.DiffuseTexture();
+            if (!t.empty() && !da.count(xfbin::Klein(t))) fehlt.insert(xfbin::Klein(t));
+        }
+        std::cout << tex.size() << " Texturen, " << mats.size() << " Materialien, " << fehlt.size() << " fehlen\n";
+        if (fehlt.empty()) return 0;
+        for (const std::string& p : daten.Pfade()) {
+            if (fehlt.empty()) break;
+            if (p.compare(0, 9, "data/spc/") != 0 && p.compare(0, 12, "data/effect/") != 0) continue;
+            std::vector<uint8_t> bb;
+            xfbin::XfbinFile xx;
+            if (!daten.Lies(p, bb, fehler) || !xfbin::ReadXfbinBuffer(bb.data(), bb.size(), xx).ok) continue;
+            for (const xfbin::XfbinPage& pg : xx.pages)
+                for (const xfbin::XfbinChunk& c : pg.chunks) {
+                    if (c.type == nullptr || c.name == nullptr || *c.type != "nuccChunkTexture" || c.data.size() < 32) continue;
+                    const std::string n = xfbin::Klein(*c.name);
+                    if (fehlt.count(n)) { std::cout << "  " << n << "  in " << p << "\n"; fehlt.erase(n); }
+                }
+        }
+        for (const std::string& n : fehlt) std::cout << "  " << n << "  NICHT GEFUNDEN\n";
+        return 0;
+    }
+
+    if (befehl == "namen") {
+        for (const auto& kv : xfbin::SpielNamenLesen(daten)) std::cout << kv.first << '\t' << kv.second << '\n';
+        return 0;
+    }
+
+    if (befehl == "dateien") {
+        // dateien [teil]: alle Pfade, optional nur die mit diesem Teil
+        const std::string teil = argc > 4 ? xfbin::Klein(argv[4]) : std::string();
+        for (const std::string& p : daten.Pfade())
+            if (teil.empty() || p.find(teil) != std::string::npos) std::cout << p << "\n";
         return 0;
     }
 

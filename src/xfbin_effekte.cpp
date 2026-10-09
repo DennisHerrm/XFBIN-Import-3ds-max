@@ -250,6 +250,19 @@ void EffekteVorbereiten(XfbinImportInterface& x, const xfbin::Spieldaten& d, con
     for (const char* cmn : { "data/effect/1efcmn.xfbin" })
         if (d.Gibt(cmn) && std::find(v.dateien.begin(), v.dateien.end(), cmn) == v.dateien.end() && !v.sprites.empty()) v.dateien.push_back(cmn);
     g_spriteDateien = v.dateien;
+    // Eigene Effektdateien der Figur (data/spc/2nrteff1.xfbin) halten
+    // ebenfalls Sprites - etwa 2nrteff1_06 fuer Narutos Jutsus.
+    std::set<std::string> codes;
+    for (const std::string& p : animDateien) {
+        const std::string n = xfbin::DateiName(p);
+        if (n.size() >= 4) codes.insert(n.substr(0, 4));
+    }
+    for (const std::string& p : d.Pfade()) {
+        if (p.compare(0, 9, "data/spc/") != 0 || p.find('/', 9) != std::string::npos) continue;
+        const std::string n = xfbin::DateiName(p);
+        if (n.size() < 8 || !codes.count(n.substr(0, 4)) || n.compare(4, 3, "eff") != 0 || n.find(".bin") != std::string::npos) continue;
+        if (std::find(g_spriteDateien.begin(), g_spriteDateien.end(), p) == g_spriteDateien.end()) g_spriteDateien.push_back(p);
+    }
     if (!w.empty()) Log("  Partikel-Hinweise: %s", w.c_str());
 }
 
@@ -279,6 +292,7 @@ std::vector<ULONG> EffekteAnbinden(XfbinImportInterface& x, const xfbin::Spielda
     }
 
     size_t angehaengt = 0, partikel = 0, ohneTextur = 0;
+    std::set<std::string> ohneTexturNamen;
     for (const auto& kv : g_systeme) {
         for (const xfbin::ParticleEmitter& em : kv.second.emitters) {
             INode* anker = nullptr;
@@ -309,7 +323,7 @@ std::vector<ULONG> EffekteAnbinden(XfbinImportInterface& x, const xfbin::Spielda
             const bool schwarm = em.materialKind == xfbin::kParticleBillboard || (em.materialKind == xfbin::kParticleClump && em.count > 1.0f);
             if (!schwarm || !p2) continue;
             const auto sp = g_sprites.find(em.materialName);
-            if (sp == g_sprites.end() || sp->second.textur.empty()) { ++ohneTextur; continue; }
+            if (sp == g_sprites.end() || sp->second.textur.empty()) { ++ohneTextur; ohneTexturNamen.insert(em.materialName); continue; }
             Object* obj = static_cast<Object*>(ip->CreateInstance(GEOMOBJECT_CLASS_ID, kParticle2));
             IParamBlock2* pb = obj ? obj->GetParamBlockByID(0) : nullptr;
             if (pb == nullptr) continue;
@@ -367,6 +381,11 @@ std::vector<ULONG> EffekteAnbinden(XfbinImportInterface& x, const xfbin::Spielda
                   ohneTextur ? (", " + std::to_string(ohneTextur) + " Schwaerme ohne Textur").c_str() : "",
                   p2 ? "" : ", WhiteoutDex fehlt - keine Partikel");
     log = z;
+    if (!ohneTexturNamen.empty()) {
+        log += " (";
+        for (const std::string& n : ohneTexturNamen) log += (log.back() == '(' ? "" : " ") + n;
+        log += ")";
+    }
     return p2Knoten;
 }
 

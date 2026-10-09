@@ -3936,9 +3936,51 @@ int XfbinImportInterface::ExportTextures(const MCHAR* directory) {
         while (std::getline(in, line)) AddWarning(Utf8ToWide(line));
     }
 
-    wchar_t buf[320];
+    // In den Index: spaetere Dateien finden ihre Texturen hier, auch
+    // wenn sie selbst keine mitbringen.
+    for (size_t i = 0; i < textures_.size() && i < textureFiles_.size(); ++i) {
+        if (textureFiles_[i].empty()) continue;
+        std::string k = textures_[i].name;
+        for (char& c : k) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        texturIndex_[k] = wdir + L"\\" + Utf8ToWide(textureFiles_[i]);
+    }
+
     Log((Msg() << L"exportTextures: " << n << L" DDS nach " << wdir).str());
 
+    return n;
+}
+
+std::set<std::string> XfbinImportInterface::OffeneTexturNamen() const {
+    std::set<std::string> s;
+    for (const auto& o : offeneTexturen_) s.insert(o.second);
+    return s;
+}
+
+int XfbinImportInterface::TexturenNachtragen() {
+    Interface* ip = GetCOREInterface();
+    if (ip == nullptr) return 0;
+    int n = 0;
+    for (auto it = offeneTexturen_.begin(); it != offeneTexturen_.end(); ) {
+        const auto t = texturIndex_.find(it->second);
+        Mtl* m = static_cast<Mtl*>(Animatable::GetAnimByHandle(it->first));
+        if (m == nullptr) { it = offeneTexturen_.erase(it); continue; }
+        if (t == texturIndex_.end() || m->ClassID() != Class_ID(DMTL_CLASS_ID, 0)) { ++it; continue; }
+        StdMat2* mtl = static_cast<StdMat2*>(m);
+        BitmapTex* bmt = static_cast<BitmapTex*>(ip->CreateInstance(TEXMAP_CLASS_ID, Class_ID(BMTEX_CLASS_ID, 0)));
+        if (bmt != nullptr) {
+            bmt->SetMapName(const_cast<MCHAR*>(t->second.c_str()));
+            bmt->SetName(mtl->GetName());
+            bmt->ReloadBitmapAndUpdate();
+            mtl->SetSubTexmap(ID_DI, bmt);
+            mtl->EnableMap(ID_DI, TRUE);
+            mtl->SetTexmapAmt(ID_DI, 1.0f, 0);
+            mtl->SetMtlFlag(MTL_TEX_DISPLAY_ENABLED, TRUE);
+            mtl->SetActiveTexmap(bmt);
+            ++n;
+        }
+        it = offeneTexturen_.erase(it);
+    }
+    if (n > 0) Log((Msg() << L"Texturen nachgetragen: " << n << L" Materialien").str());
     return n;
 }
 
@@ -4112,8 +4154,15 @@ int XfbinImportInterface::BuildMaterials(const MCHAR* directory) {
 
                 // Referenzierte Texturen liegen nicht immer in
                 // derselben Datei - "celshade" etwa kommt aus
-                // einem gemeinsamen XFBIN. Das ist kein Fehler,
-                // aber es gehoert gemeldet.
+                // einem gemeinsamen XFBIN, Effekte nehmen ihre aus
+                // 1efcmn.xfbin, ein Doppelgaenger die der Figur. Schon
+                // exportiert? Sonst merken und spaeter nachtragen.
+                std::string klein = texName;
+                for (char& c : klein) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                if (!found) {
+                    const auto idx = texturIndex_.find(klein);
+                    if (idx != texturIndex_.end()) { mapFile = idx->second; found = true; }
+                }
                 if (!found) {
                     ++missing;
                     if (firstMissing.empty()) firstMissing = Cp932ToWide(texName);
@@ -4121,6 +4170,11 @@ int XfbinImportInterface::BuildMaterials(const MCHAR* directory) {
             }
 
             Mtl* built = MakeStandardMaterial(ip, Cp932ToWide(mn), mapFile);
+            if (built != nullptr && mapFile.empty() && !texName.empty()) {
+                std::string klein = texName;
+                for (char& c : klein) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                offeneTexturen_.emplace_back(Animatable::GetHandleByAnim(built), klein);
+            }
             byName[mn] = built;
             if (built != nullptr) {
                 sceneMaterials_[mn] = Animatable::GetHandleByAnim(built);

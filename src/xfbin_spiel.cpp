@@ -3,6 +3,7 @@
 // ============================================================
 
 #include "xfbin_spiel.h"
+#include "xfbin_reader.h"
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -15,8 +16,11 @@
 #include <cctype>
 #include <cwctype>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <set>
 #include <sstream>
 
@@ -220,6 +224,140 @@ std::string ZusatzFuer(const std::string& code, int kostuem) {
     if (!code.empty() && code[0] == '1') z = "Part I";
     if (kostuem > 1) z += (z.empty() ? "" : ", ") + std::string("costume ") + std::to_string(kostuem);
     return z;
+}
+
+// ------------------------------------------------------------
+//  Namen aus dem Spiel selbst (Storm 4, Connections)
+//
+//  playerSettingParam.bin zaehlt jede waehlbare Fassung auf: einen
+//  Suchcode ("9nrt00" - Figurencode und Variante) und zwei Text-IDs
+//  ("c_cha_00" Grundname, "c_cha_721" Fassung). messageInfo.bin
+//  haelt die Texte, aber nur unter dem CRC32 der ID - in der
+//  MSB-zuerst-Variante (Polynom 04C11DB7, Start und Ende FFFFFFFF,
+//  "BZIP2"), als Little Endian abgelegt.
+//
+//  Beide Dateien bestehen aus festen Eintraegen mit 8-Byte-Zeigern,
+//  die relativ zur eigenen Position zaehlen. Der Text-Eintrag:
+//    Connections  48 Byte, Zeiger bei +0x18, FFFFFFFF bei +0x24
+//    Storm 4      40 Byte, Zeiger bei +0x10, FFFFFFFF bei +0x1C
+//  Storm 4 speichert die Fassung nur als Zusatz ("(Kurama Link
+//  Mode)"), Connections als ganzen Namen.
+// ------------------------------------------------------------
+uint32_t Crc32Msb(const std::string& s) {
+    static uint32_t tab[256];
+    static bool fertig = false;
+    if (!fertig) {
+        for (uint32_t i = 0; i < 256; ++i) {
+            uint32_t c = i << 24;
+            for (int k = 0; k < 8; ++k) c = (c & 0x80000000u) ? (c << 1) ^ 0x04C11DB7u : (c << 1);
+            tab[i] = c;
+        }
+        fertig = true;
+    }
+    uint32_t c = 0xFFFFFFFFu;
+    for (unsigned char ch : s) c = (c << 8) ^ tab[((c >> 24) ^ ch) & 0xFF];
+    return c ^ 0xFFFFFFFFu;
+}
+
+// Zeichenkette hinter einem relativen 8-Byte-Zeiger, leer wenn keiner.
+std::string TextHinter(const std::vector<uint8_t>& b, size_t p) {
+    if (p + 8 > b.size()) return std::string();
+    int64_t v = 0;
+    std::memcpy(&v, &b[p], 8);
+    if (v == 0) return std::string();
+    const int64_t t = static_cast<int64_t>(p) + v;
+    if (t <= 0 || t >= static_cast<int64_t>(b.size())) return std::string();
+    const auto ende = std::find(b.begin() + t, b.end(), uint8_t(0));
+    return std::string(b.begin() + t, ende);
+}
+
+uint32_t U32Le(const std::vector<uint8_t>& b, size_t p) {
+    uint32_t v = 0;
+    if (p + 4 <= b.size()) std::memcpy(&v, &b[p], 4);
+    return v;
+}
+
+struct SpielNamen {
+    std::map<std::string, std::string> name;   // Code -> "Naruto Uzumaki (Baryon Mode)"
+};
+
+SpielNamen LeseSpielNamen(const Spieldaten& d) {
+    SpielNamen aus;
+    std::vector<uint8_t> psp, msg;
+    std::string fehler;
+    bool da = false;
+    for (const char* p : { "data/spc/playersettingparam.bin.xfbin", "data/spc/win64/playersettingparam.bin.xfbin" })
+        if (d.Lies(p, psp, fehler)) { da = true; break; }
+    if (!da) return aus;
+    da = false;
+    for (const char* p : { "data/message/win64/eng/messageinfo.bin.xfbin", "data/message/win32/eng/messageinfo.bin.xfbin" })
+        if (d.Lies(p, msg, fehler)) { da = true; break; }
+    if (!da) return aus;
+
+    // Texte: Zeiger, 12 Byte spaeter FFFFFFFF. Der Schluessel steht
+    // 0x18 (Connections) oder 0x10 (Storm 4) vor dem Zeiger; dazwischen
+    // darf ein Zeiger auf den Kurznamen stehen ("Naruto"). Welcher
+    // Abstand gilt, zeigt die Schrittweite: der naechste Eintrag folgt
+    // nach Abstand + 0x18 Byte mit demselben Muster.
+    auto eintrag = [&](size_t q) { return q + 0x10 <= msg.size() && U32Le(msg, q + 0x0C) == 0xFFFFFFFFu; };
+    size_t abstand = 0, besteZahl = 0;
+    for (const size_t a : { size_t(0x18), size_t(0x10) }) {
+        size_t n = 0;
+        for (size_t q = a; q + a + 0x28 <= msg.size(); q += 4)
+            if (eintrag(q) && eintrag(q + a + 0x18) && !TextHinter(msg, q).empty()) ++n;
+        if (n > besteZahl) { besteZahl = n; abstand = a; }
+    }
+    std::map<uint32_t, std::string> texte;
+    if (abstand != 0)
+        for (size_t q = abstand; q + 0x10 <= msg.size(); q += 4) {
+            if (!eintrag(q)) continue;
+            const std::string s = TextHinter(msg, q);
+            if (!s.empty()) texte[U32Le(msg, q - abstand)] = s;
+        }
+    auto text = [&](const std::string& id) -> std::string {
+        if (id.empty()) return std::string();
+        const auto it = texte.find(Crc32Msb(id));
+        return it == texte.end() ? std::string() : it->second;
+    };
+
+    // Fassungen: Suchcode, 0x10 dahinter die beiden Text-IDs.
+    auto istSuchcode = [](const std::string& s) {
+        if (s.size() != 6) return false;
+        for (size_t i = 0; i < 4; ++i)
+            if (!(std::isdigit(static_cast<unsigned char>(s[i])) || std::islower(static_cast<unsigned char>(s[i])))) return false;
+        return std::isdigit(static_cast<unsigned char>(s[4])) && std::isdigit(static_cast<unsigned char>(s[5]));
+    };
+    std::map<std::string, std::pair<int, std::string>> best;   // Code -> (Variante, Name)
+    for (size_t p = 0; p + 0x20 <= psp.size(); p += 4) {
+        const std::string sc = TextHinter(psp, p);
+        if (!istSuchcode(sc)) continue;
+        // Die Text-IDs: 0x10 hinter dem Suchcode (Storm 4, Connections)
+        // oder 0x18 (Storm 3 - dort steht davor noch eine Zahl).
+        std::string i1, i2;
+        for (const size_t o : { size_t(0x10), size_t(0x18) }) {
+            i1 = TextHinter(psp, p + o);
+            if (i1.find('_') != std::string::npos) { i2 = TextHinter(psp, p + o + 8); break; }
+            i1.clear();
+        }
+        if (i1.empty()) continue;
+        const std::string grund = text(i1), fassung = text(i2);
+        std::string n;
+        // Storm 4 kennt nur den Zusatz ("(Kurama Link Mode)"), Storm 3
+        // kuerzt ("Naruto (WS: Rasen Shuriken)") - dann der volle
+        // Grundname mit dem Klammerteil.
+        const size_t klammer = fassung.find('(');
+        if (fassung.empty()) n = grund;
+        else if (grund.empty() || fassung.compare(0, grund.size(), grund) == 0) n = fassung;
+        else if (klammer != std::string::npos) n = grund + " " + fassung.substr(klammer);
+        else n = fassung;
+        if (n.empty()) continue;
+        const std::string code = sc.substr(0, 4);
+        const int variante = (sc[4] - '0') * 10 + (sc[5] - '0');
+        const auto it = best.find(code);
+        if (it == best.end() || variante < it->second.first) best[code] = { variante, n };
+    }
+    for (const auto& kv : best) aus.name[kv.first] = kv.second.second;
+    return aus;
 }
 
 // Codes aus characode.bin.xfbin, in Kader-Reihenfolge. Die Datei
@@ -434,7 +572,7 @@ std::vector<std::string> Spieldaten::Pfade() const {
 // ============================================================
 //  Katalog
 // ============================================================
-std::string ClumpName(const FigurEintrag& f) { return f.code + "bod" + std::to_string(f.kostuem); }
+std::string ClumpName(const FigurEintrag& f) { return f.clump.empty() ? f.code + "bod" + std::to_string(f.kostuem) : f.clump; }
 
 std::string AnimGruppe(const FigurEintrag& f, const std::string& pfad) {
     std::string n = Klein(DateiName(pfad));
@@ -457,6 +595,8 @@ std::string AnimGruppe(const FigurEintrag& f, const std::string& pfad) {
     return "Other";
 }
 
+std::map<std::string, std::string> SpielNamenLesen(const Spieldaten& daten) { return LeseSpielNamen(daten).name; }
+
 Katalog BaueKatalog(const Spieldaten& daten) {
     Katalog k;
     const std::vector<std::string> pfade = daten.Pfade();
@@ -470,6 +610,28 @@ Katalog BaueKatalog(const Spieldaten& daten) {
     std::sort(namen.begin(), namen.end());
 
     const std::vector<std::string> kader = KaderReihenfolge(daten);
+    const SpielNamen spiel = LeseSpielNamen(daten);
+    auto benenne = [&](FigurEintrag& f) {
+        const auto it = spiel.name.find(f.code);
+        if (it != spiel.name.end()) {
+            f.name = it->second;
+            f.zusatz = f.kostuem > 1 ? "costume " + std::to_string(f.kostuem) : std::string();
+            f.art = kArtFigur;
+        } else {
+            f.name = NameFuer(f.code);
+            f.zusatz = ZusatzFuer(f.code, f.kostuem);
+            // Kennt das Spiel seinen Kader, ist alles andere kein Kaempfer.
+            f.art = (spiel.name.empty() && f.code[0] >= '1' && f.code[0] <= '3') ? kArtFigur : kArtAndere;
+        }
+        const auto k = std::find(kader.begin(), kader.end(), f.code);
+        if (k != kader.end()) f.reihenfolge = static_cast<int>(k - kader.begin());
+    };
+    auto gemeinsamFuer = [&](FigurEintrag& f) {
+        for (const std::string& g : { std::string(1, f.code[0]) + "cmnbod1", std::string("1cmnbod1") }) {
+            if (daten.Gibt("data/spc/" + g + ".xfbin")) { f.gemeinsam = "data/spc/" + g + ".xfbin"; break; }
+        }
+    };
+    std::set<std::string> mitModell;
     for (const std::string& n : namen) {
         // <code>bod<N>
         if (n.size() < 8 || n.compare(4, 3, "bod") != 0) continue;
@@ -486,14 +648,48 @@ Katalog BaueKatalog(const Spieldaten& daten) {
         f.modell = "data/spc/" + n + ".xfbin";
         for (const std::string& a : namen)
             if (BeginntMit(a, code) && EigeneAnimDatei(a.substr(4), nr)) f.anims.push_back("data/spc/" + a + ".xfbin");
-        for (const std::string& g : { std::string(1, code[0]) + "cmnbod1", std::string("1cmnbod1") }) {
-            if (daten.Gibt("data/spc/" + g + ".xfbin")) { f.gemeinsam = "data/spc/" + g + ".xfbin"; break; }
+        gemeinsamFuer(f);
+        benenne(f);
+        mitModell.insert(code);
+        k.figuren.push_back(std::move(f));
+    }
+
+    // Waehlbare Fassungen ohne eigenes Modell: ihre Animationen
+    // bewegen das Modell einer anderen. Narutos Kurama-Link-Modus
+    // (4nrt) hat 4nrtbod1c/l/s und Jutsus, aber kein 4nrtbod1 - die
+    // Animationen sprechen 3nrtbod1 an.
+    for (const auto& kv : spiel.name) {
+        const std::string& code = kv.first;
+        if (mitModell.count(code) || code.find("cmn") != std::string::npos) continue;
+        FigurEintrag f;
+        f.code = code;
+        for (const std::string& a : namen)
+            if (BeginntMit(a, code) && EigeneAnimDatei(a.substr(4), 1)) f.anims.push_back("data/spc/" + a + ".xfbin");
+        if (f.anims.empty()) continue;
+        // Welches Koerpermodell sprechen die Animationen an? Das
+        // haeufigste "<code>bod<N>" mit eigener Datei.
+        std::map<std::string, int> zaehler;
+        for (const std::string& a : f.anims) {
+            std::vector<uint8_t> b;
+            std::string fehler;
+            XfbinFile datei;
+            if (!daten.Lies(a, b, fehler) || !ReadXfbinBuffer(b.data(), b.size(), datei).ok) continue;
+            for (const ChunkMap& m : datei.table.maps) {
+                if (m.typeIndex >= datei.table.types.size() || m.nameIndex >= datei.table.names.size()) continue;
+                if (datei.table.types[m.typeIndex] != "nuccChunkClump") continue;
+                const std::string c = datei.table.names[m.nameIndex];
+                if (c.size() < 8 || c.compare(4, 3, "bod") != 0 || c.find("cmn") != std::string::npos) continue;
+                if (daten.Gibt("data/spc/" + c + ".xfbin")) ++zaehler[c];
+            }
+            if (!zaehler.empty()) break;
         }
-        f.name = NameFuer(code);
-        f.zusatz = ZusatzFuer(code, nr);
-        f.art = (code[0] >= '1' && code[0] <= '3') ? kArtFigur : kArtAndere;
-        const auto it = std::find(kader.begin(), kader.end(), code);
-        if (it != kader.end()) f.reihenfolge = static_cast<int>(it - kader.begin());
+        if (zaehler.empty()) continue;
+        const auto top = std::max_element(zaehler.begin(), zaehler.end(),
+                                          [](const auto& x, const auto& y) { return x.second < y.second; });
+        f.clump = top->first;
+        f.modell = "data/spc/" + f.clump + ".xfbin";
+        gemeinsamFuer(f);
+        benenne(f);
         k.figuren.push_back(std::move(f));
     }
     std::stable_sort(k.figuren.begin(), k.figuren.end(), [](const FigurEintrag& a, const FigurEintrag& b) {

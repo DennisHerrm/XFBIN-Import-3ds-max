@@ -1,5 +1,36 @@
 # Changelog
 
+## Unveroeffentlicht
+
+### Alle Fassungen einer Figur, mit den Namen aus dem Spiel
+- Storm 3, Storm 4 und Connections bringen ihre Figurenauswahl mit:
+  `playerSettingParam.bin` nennt jede waehlbare Fassung ("9nrt00") mit
+  zwei Text-IDs, `messageInfo.bin` haelt die Texte unter dem CRC32 der
+  ID (MSB-zuerst, "BZIP2"-Variante). Daraus kommen jetzt die Namen:
+  "Naruto Uzumaki (Baryon Mode)", "(7th Hokage)", "(Kurama Link Mode)",
+  "(Sage of the Six Paths Mode)", "(THE LAST)" ...
+- Der Reiter "Characters" zeigt, was im Spiel waehlbar ist - nicht mehr
+  nur Codes, die mit 1 bis 3 beginnen. In Connections findet "naruto"
+  jetzt 19 Eintraege statt 3.
+- Fassungen ohne eigenes Modell kommen dazu: Kurama Link (`4nrt`) hat
+  nur Animationen und benutzt das Modell `3nrtbod1`.
+- Storm 1 und 2 haben die Tabellen nicht; dort bleibt die eingebaute
+  Namensliste.
+
+### Texturen aus anderen Dateien
+- Effekte nehmen ihre Texturen meist aus der gemeinsamen Bibliothek
+  `1efcmn.xfbin`, Doppelgaenger die Koerpertextur der Figur, Hokage-
+  Naruto eine aus `6nrteff1.xfbin`. Bisher suchte jedes Material nur
+  in seiner eigenen Datei und blieb sonst leer. Jetzt gilt ein Index
+  ueber alle Dateien eines Imports, und was dann noch fehlt, wird in
+  den Spieldateien gesucht und nachgetragen. Connections-Naruto: 43
+  Meshes ohne Textur vorher, keines jetzt.
+- Partikel-Sprites auch aus den eigenen Effektdateien der Figur
+  (`data/spc/2nrteff1.xfbin`).
+
+### Werkzeug
+`xfbindump --spiel <ordner> namen | dateien [teil] | texfehlt <datei>`.
+
 ## 3.0.0 - Direkt aus dem Spiel, C++-Fenster, Effekte, WC3-Modus
 
 Der Importer liest die Figuren jetzt direkt aus den installierten
