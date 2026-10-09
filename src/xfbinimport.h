@@ -148,6 +148,7 @@
 
 #include <array>
 #include <memory>
+#include <cctype>
 #include <map>
 #include <set>
 #include <string>
@@ -480,6 +481,14 @@ public:
     // weitere Dateien exportiert wurden, traegt TexturenNachtragen
     // sie ein. Der Index gilt fuer einen Import.
     void TexturIndexLeeren() { texturIndex_.clear(); offeneTexturen_.clear(); }
+    void SetFarbVariante(int v) { farbVariante_ = v; }
+    // Pfad der exportierten DDS zu einem Texturnamen, leer wenn noch keine.
+    std::wstring TexturPfad(const std::string& name) const {
+        std::string k = name;
+        for (char& c : k) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        const auto it = texturIndex_.find(k);
+        return it == texturIndex_.end() ? std::wstring() : it->second;
+    }
     std::set<std::string> OffeneTexturNamen() const;
     int TexturenNachtragen();
 
@@ -517,7 +526,10 @@ public:
     // Animationen ab 'from' verwerfen, die keinen Bone von 'clump'
     // bewegen - etwa die Opferanimation in einer Jutsu-Datei, die
     // nur den Gegner anspricht. Liefert die Zahl der behaltenen.
-    size_t KeepAnimsFor(size_t from, const std::string& clump);
+    // auchFormen: auch behalten, was nur ein anderes Koerpermodell
+    // ("<code>bod<N>", nicht das geteilte cmn) bewegt - Baryon-Narutos
+    // Ultimate bewegt in zehn Teilen nur die Form 9nrvbod1.
+    size_t KeepAnimsFor(size_t from, const std::string& clump, bool auchFormen = false);
 
     // Gruppe fuer die Anzeige ("Basic", "Jutsu" ...), je Animation.
     void TagAnims(size_t from, const std::string& tag);
@@ -627,6 +639,7 @@ private:
     std::vector<xfbin::XfbinMaterial> materials_;
     std::vector<std::string>          textureFiles_;   // parallel zu textures_
     std::map<std::string, std::wstring> texturIndex_;             // Texturname klein -> DDS
+    int farbVariante_ = 0;                                         // Bild mehrbildriger Texturen
     std::vector<std::pair<AnimHandle, std::string>> offeneTexturen_; // Material, Texturname klein
     bool texturesParsed_ = false;
 

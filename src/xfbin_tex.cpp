@@ -7,6 +7,7 @@
 
 #include "xfbin_tex.h"
 
+#include <algorithm>
 #include <cstring>
 #include <fstream>
 #include <locale>
@@ -574,7 +575,8 @@ std::string SafeFileName(const RawString& s) {
 int ExportTextures(const std::vector<XfbinTexture>& textures,
                    const std::string& directory,
                    std::vector<std::string>& fileNames,
-                   std::string& warnings) {
+                   std::string& warnings,
+                   int variante) {
     fileNames.clear();
     fileNames.resize(textures.size());
 
@@ -600,11 +602,11 @@ int ExportTextures(const std::vector<XfbinTexture>& textures,
             std::string why;
             if (WriteDds(t.textures[k], full, why)) {
                 ++written;
-                // Nur die erste Teiltextur zaehlt als "die"
-                // Textur des Chunks - die weiteren sind in den
-                // bisher gesehenen Dateien Varianten desselben
-                // Bildes.
-                if (k == 0) fileNames[i] = name;
+                // Eine Teiltextur zaehlt als "die" Textur des
+                // Chunks - die Bilder sind Farbvarianten desselben
+                // Bildes; welche, entscheidet variante.
+                const size_t wahl = std::min(t.textures.size() - 1, static_cast<size_t>(std::max(0, variante)));
+                if (k == wahl) fileNames[i] = name;
             } else {
                 warn << "Textur '" << name << "': " << why << ".\n";
             }
@@ -637,7 +639,13 @@ std::string MakeTextureSummary(const std::vector<XfbinTexture>& textures,
     }
 
     for (const XfbinMaterial& m : materials) {
-        s << "  " << m.name << " -> " << m.DiffuseTexture() << "\n";
+        s << "  " << m.name << " -> " << m.DiffuseTexture() << "   [flags=" << m.flags;
+        if (m.flags & 0x10) s << " blend=" << m.blendRate << "/" << m.blendType;
+        for (const MaterialTextureGroup& g : m.groups) {
+            s << " |g" << g.unk << ":";
+            for (const RawString& t : g.textureNames) s << " " << t;
+        }
+        s << "]\n";
     }
 
     return s.str();

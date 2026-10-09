@@ -213,6 +213,7 @@ names and codes (`naruto`, `2ssk`, `bod2` for a second costume).
 | **Reactions** | off | Adds the shared hit, fall and get-up animations every character uses |
 | **Clear scene** | off | Deletes everything before the import |
 | **WC3 mode** | off | Prepares the scene for WhiteoutDex — see below |
+| **Color 1…5** | 1 | Color variant. Many textures hold several versions of the same image — the alternative colors you can pick in the game (Baryon Mode Naruto: 1 = yellow chakra glow, 2 = skin tone). Where a texture has fewer, its last one is used. |
 
 ### 2. Load animations
 
@@ -258,8 +259,8 @@ works without fixing it by hand:
 
 - **One mesh per material** — a Multi/Sub material would export
   untextured.
-- **Facing −Y** — a helper *WC3 root* turns the character, because
-  WhiteoutDex writes Max −Y as Warcraft's forward.
+- **Facing −Y** — WhiteoutDex writes Max −Y as Warcraft's forward, and
+  the Storm models already face −Y, so nothing is turned.
 - **In place** — the root bones keep their horizontal rest position;
   jumps keep their height. Effects and clones still move.
 - **Effects on/off** — step keys from opacity, scale and the particle

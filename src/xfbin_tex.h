@@ -120,10 +120,14 @@ bool WriteDds(const NutTexture& tex, const std::string& path, std::string& why);
 //
 // Rueckgabe: Anzahl geschriebener Dateien. names bekommt die
 // erzeugten Dateinamen, in derselben Reihenfolge wie textures.
+// variante: welches Bild einer mehrbildrigen Textur in fileNames
+// steht - die Bilder sind Farbvarianten der Figur (Baryon-Naruto: gelb,
+// hautfarben). Hat eine Textur weniger, gilt ihr letztes.
 int ExportTextures(const std::vector<XfbinTexture>& textures,
                    const std::string& directory,
                    std::vector<std::string>& fileNames,
-                   std::string& warnings);
+                   std::string& warnings,
+                   int variante = 0);
 
 std::string MakeTextureSummary(const std::vector<XfbinTexture>& textures,
                                const std::vector<XfbinMaterial>& materials);

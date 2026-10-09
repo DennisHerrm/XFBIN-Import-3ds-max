@@ -1917,12 +1917,18 @@ void XfbinImportInterface::RetargetAnims(size_t from, const std::string& fromClu
     }
 }
 
-size_t XfbinImportInterface::KeepAnimsFor(size_t from, const std::string& clump) {
+size_t XfbinImportInterface::KeepAnimsFor(size_t from, const std::string& clump, bool auchFormen) {
+    auto istForm = [](const std::string& c) {
+        if (c.size() < 8 || c.compare(4, 3, "bod") != 0 || c.find("cmn") != std::string::npos) return false;
+        for (size_t k = 7; k < c.size(); ++k) if (c[k] < '0' || c[k] > '9') return false;
+        return true;
+    };
     size_t out = from;
     for (size_t i = from; i < anims_.size(); ++i) {
         bool moves = false;
         for (const xfbin::AnmEntry& e : anims_[i].entries) {
-            if (e.entryFormat == xfbin::kEntryBone && e.clumpName == clump) { moves = true; break; }
+            if (e.entryFormat != xfbin::kEntryBone) continue;
+            if (e.clumpName == clump || (auchFormen && istForm(e.clumpName))) { moves = true; break; }
         }
         if (!moves) continue;
         if (out != i) {
@@ -3610,6 +3616,7 @@ const MCHAR* XfbinImportInterface::ImportCharacter(const MCHAR* folder, const MC
         o.leeren = (flags & 4) != 0;
         o.wc3 = (flags & 8) != 0;
         o.effekte = (flags & 16) == 0;
+        o.farbe = (flags >> 8) & 0xF;   // Farbvariante in Bits 8-11
         std::wstring bericht;
         const bool ok = xfi::ImportiereFigur(*daten, f, o, bericht);
         scratch_ = (ok ? L"" : L"ERROR: ") + bericht;
@@ -3928,7 +3935,7 @@ int XfbinImportInterface::ExportTextures(const MCHAR* directory) {
 
     std::string warn;
     const int n = xfbin::ExportTextures(textures_, WideToUtf8(wdir),
-                                        textureFiles_, warn);
+                                        textureFiles_, warn, farbVariante_);
 
     if (!warn.empty()) {
         std::istringstream in(warn);

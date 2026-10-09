@@ -25,6 +25,7 @@
 #define IDC_ORDNER          1026
 #define IDC_EFFEKTE         1027
 #define IDC_WC3             1028
+#define IDC_FARBE           1029
 
 // Animationsfenster
 #define IDD_ANIMATIONEN     102

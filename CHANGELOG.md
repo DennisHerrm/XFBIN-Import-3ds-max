@@ -17,6 +17,36 @@
 - Storm 1 und 2 haben die Tabellen nicht; dort bleibt die eingebaute
   Namensliste.
 
+### WC3-Modus: Blick nach vorn
+- Der Helfer "WC3 root" drehte die Figur um 180 Grad - mit dem Ruecken
+  nach vorn. Die Storm-Modelle schauen in Max schon nach -Y (Ruhepose
+  und alle Animationen, an den Augen gemessen), und das ist laut
+  WhiteoutDex (MDX = -Y, X, Z) die Blickrichtung in Warcraft III. Die
+  Drehung entfaellt.
+
+### Animationen der Verwandlungen
+- Aus den eigenen Dateien bleiben auch Animationen, die nur eine Form
+  der Figur bewegen. Baryon-Narutos Ultimate besteht aus Teilen, von
+  denen zehn (`9nrtspl1_atk010` bis `atk100`) nur die Baryon-Form
+  `9nrvbod1` bewegen - sie fielen bisher weg.
+
+### Farbvarianten
+- Viele Texturen enthalten mehrere Bilder - dieselbe Vorlage in
+  verschiedenen Farben (Baryon-Naruto: gelbes Chakra-Gluehen und
+  Hautton, Naruto im Kyubi-Chakra-Modus fuenf). Bisher galt immer das
+  erste. Neuer Knopf "Color 1..5" im Figurenfenster; hat eine Textur
+  weniger Bilder, gilt ihr letztes. `importCharacter`: Bits 8-11 der
+  Flags.
+
+### Kulissen in der Ultimate-Datei
+- Manche Ultimates tragen ihre Effektmodelle selbst: `9nrtspl1.xfbin`
+  (Baryon) haelt neben 38 Animationen 99 Clumps - Himmel, Berge, Aura.
+  Die eigenen Animationsdateien sind jetzt Quelle fuer Effektmodelle und
+  Sprites; bei Baryon kommen 67 Clumps mit 518 Objekten dazu, alle 191
+  Partikel-Schwaerme haben eine Textur (vorher 27 ohne).
+- Sprite-Texturen mehrbildriger Texturen (`name_0.dds`) werden ueber
+  den Texturindex gefunden statt unter einem Pfad, den es nicht gibt.
+
 ### Texturen aus anderen Dateien
 - Effekte nehmen ihre Texturen meist aus der gemeinsamen Bibliothek
   `1efcmn.xfbin`, Doppelgaenger die Koerpertextur der Figur, Hokage-

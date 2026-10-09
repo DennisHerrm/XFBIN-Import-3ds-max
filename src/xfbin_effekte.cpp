@@ -54,6 +54,7 @@ enum : ParamID {
 // Was ein Sprite braucht: Texturdatei, Groesse, Raster.
 struct Sprite {
     std::wstring textur;   // DDS im Texturordner
+    std::string texName;   // Name der Textur - der Index kennt die wirkliche Datei
     float groesse = 10.0f; // Durchmesser des Modells, cm
     int rows = 1, cols = 1;
 };
@@ -106,6 +107,7 @@ void SammleSprites(const xfbin::XfbinFile& file, const std::set<std::string>& ge
             for (const xfbin::XfbinMaterial& mt : materialien) {
                 if (mt.name != mn || mt.groups.empty() || mt.groups[0].textureNames.empty()) continue;
                 s.textur = texOrdner + L"\\" + Breit(SicherDatei(mt.groups[0].textureNames[0])) + L".dds";
+                s.texName = mt.groups[0].textureNames[0];
                 return s;
             }
         }
@@ -250,6 +252,8 @@ void EffekteVorbereiten(XfbinImportInterface& x, const xfbin::Spieldaten& d, con
     for (const char* cmn : { "data/effect/1efcmn.xfbin" })
         if (d.Gibt(cmn) && std::find(v.dateien.begin(), v.dateien.end(), cmn) == v.dateien.end() && !v.sprites.empty()) v.dateien.push_back(cmn);
     g_spriteDateien = v.dateien;
+    for (const std::string& p : animDateien)
+        if (std::find(g_spriteDateien.begin(), g_spriteDateien.end(), p) == g_spriteDateien.end()) g_spriteDateien.push_back(p);
     // Eigene Effektdateien der Figur (data/spc/2nrteff1.xfbin) halten
     // ebenfalls Sprites - etwa 2nrteff1_06 fuer Narutos Jutsus.
     std::set<std::string> codes;
@@ -362,7 +366,10 @@ std::vector<ULONG> EffekteAnbinden(XfbinImportInterface& x, const xfbin::Spielda
             pb->SetValue(P2_MODELSPACE, 0, em.attachToBone ? 1 : 0);
             pb->SetValue(P2_XYQUAD, 0, 0);
             pb->SetValue(P2_RATE, 0, 0.0f);
-            if (MSTR* p = static_cast<MSTR*>(obj->GetInterface(kP2Pfad))) *p = MSTR(s.textur.c_str());
+            // Mehrbildrige Texturen liegen als name_0.dds, name_1.dds ...
+            // - welche gilt, weiss der Index (Farbvariante).
+            const std::wstring pfad = x.TexturPfad(s.texName).empty() ? s.textur : x.TexturPfad(s.texName);
+            if (MSTR* p = static_cast<MSTR*>(obj->GetInterface(kP2Pfad))) *p = MSTR(pfad.c_str());
             if (MSTR* p = static_cast<MSTR*>(obj->GetInterface(kP2Praefix))) *p = MSTR(_T("Textures\\"));
             INode* n = ip->CreateObjectNode(obj);
             if (n == nullptr) continue;

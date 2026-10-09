@@ -26,6 +26,7 @@ namespace xfi {
 namespace {
 
 constexpr int kReiterZahl = 3;
+constexpr int kFarben = 5;   // Farbvarianten zum Durchschalten
 const wchar_t* const kReiter[kReiterZahl] = { L"Characters", L"Others", L"All" };
 
 enum : unsigned { kL = 1, kO = 2, kR = 4, kU = 8 };
@@ -51,6 +52,7 @@ struct Fenster {
     bool effekte = true;
     bool wc3 = false;
     bool reaktionen = false;
+    int  farbe = 0;          // Farbvariante, 0 = Standard
     bool leeren = false;
     bool importiert = false;
     std::wstring status;
@@ -122,7 +124,7 @@ void MerkeAnker(Fenster& f) {
         { IDC_SPIEL_LABEL, kL | kO }, { IDC_SPIEL, kL | kO | kR }, { IDC_DURCHSUCHEN, kO | kR }, { IDC_ORDNER, kL | kO | kR },
         { IDC_STATUS, kL | kO | kR },
         { IDC_TAB0, kL | kO }, { IDC_TAB0 + 1, kL | kO }, { IDC_TAB0 + 2, kL | kO },
-        { IDC_TEXTUREN, kO | kR }, { IDC_EFFEKTE, kO | kR }, { IDC_REAKTIONEN, kO | kR }, { IDC_LEEREN, kO | kR }, { IDC_WC3, kO | kR },
+        { IDC_TEXTUREN, kO | kR }, { IDC_EFFEKTE, kO | kR }, { IDC_REAKTIONEN, kO | kR }, { IDC_LEEREN, kO | kR }, { IDC_WC3, kO | kR }, { IDC_FARBE, kO | kR },
         { IDC_SUCHE_LABEL, kL | kO }, { IDC_SUCHE, kL | kO | kR }, { IDC_ANZAHL, kO | kR },
         { IDC_LISTE, kL | kO | kR | kU }, { IDC_DETAIL, kL | kR | kU }, { IDC_FUSS, kL | kR | kU },
         { IDC_ANIMFENSTER, kR | kU }, { IDOK, kR | kU }, { IDCANCEL, kR | kU },
@@ -361,6 +363,7 @@ void Importiere(Fenster& f) {
     o.wc3 = f.wc3;
     o.reaktionen = f.reaktionen;
     o.leeren = f.leeren;
+    o.farbe = f.farbe;
     Status(f, L"Importing " + Anzeigename(fe) + L"...");
     HCURSOR alt = SetCursor(LoadCursor(nullptr, IDC_WAIT));
     std::wstring bericht;
@@ -399,6 +402,8 @@ void Einrichten(Fenster& f) {
     f.wc3 = LiesEinstellung(L"WC3") == L"1";
     f.reaktionen = LiesEinstellung(L"Reaktionen") == L"1";
     f.leeren = LiesEinstellung(L"Leeren") == L"1";
+    f.farbe = std::clamp(_wtoi(LiesEinstellung(L"Farbe").c_str()), 0, kFarben - 1);
+    SetDlgItemTextW(f.h, IDC_FARBE, (L"Color " + std::to_wstring(f.farbe + 1)).c_str());
     f.spiele = xfbin::FindeSpiele();
     f.ordner = StartOrdner();
     FuelleSpiele(f);
@@ -456,7 +461,7 @@ INT_PTR Verarbeite(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             const bool betont = (id >= IDC_TAB0 && id < IDC_TAB0 + kReiterZahl && id - IDC_TAB0 == f->reiter) ||
                                 (id == IDC_TEXTUREN && f->texturen) || (id == IDC_EFFEKTE && f->effekte) || (id == IDC_WC3 && f->wc3) ||
                                 (id == IDC_REAKTIONEN && f->reaktionen) ||
-                                (id == IDC_LEEREN && f->leeren) || id == IDOK;
+                                (id == IDC_LEEREN && f->leeren) || (id == IDC_FARBE && f->farbe > 0) || id == IDOK;
             xfui::ZeichneKnopf(f->pal, f->fontNormal, *d, betont);
         }
         return TRUE;
@@ -519,6 +524,16 @@ INT_PTR Verarbeite(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
                     FuelleSpiele(*f);
                     Lade(*f);
                 }
+            }
+            return TRUE;
+        case IDC_FARBE:
+            if (code == BN_CLICKED) {
+                f->farbe = (f->farbe + 1) % kFarben;
+                SchreibeEinstellung(L"Farbe", std::to_wstring(f->farbe));
+                SetDlgItemTextW(h, IDC_FARBE, (L"Color " + std::to_wstring(f->farbe + 1)).c_str());
+                InvalidateRect(GetDlgItem(h, IDC_FARBE), nullptr, FALSE);
+                Status(*f, f->farbe == 0 ? std::wstring(L"Color 1: the character's standard colors.")
+                                         : L"Color " + std::to_wstring(f->farbe + 1) + L": alternative color variant from the game's textures (where a texture has fewer variants, its last one is used).");
             }
             return TRUE;
         case IDC_TEXTUREN:

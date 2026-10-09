@@ -272,6 +272,7 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
 
     x.Close();
     x.TexturIndexLeeren();
+    x.SetFarbVariante(o.farbe);
     EffekteZuruecksetzen();
     if (o.leeren) {
         FuehreSkript(L"delete objects");
@@ -341,7 +342,7 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
                 x.RetargetAnims(von, c, clump, gleich ? std::string() : q, gleich ? std::string() : zielPraefix, true, q);
             }
         }
-        const size_t behalten = x.KeepAnimsFor(von, clump);
+        const size_t behalten = x.KeepAnimsFor(von, clump, true);
         x.TagAnims(von, xfbin::AnimGruppe(f, pfad));
         ++dateien;
         Log("  %s: %zu eigene Animationen", pfad.c_str(), behalten);
@@ -481,6 +482,10 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
 
         const std::string kurz = f.code.substr(1);   // "nrt"
         std::vector<std::string> kandidaten = ev.dateien;
+        // Manche Ultimates tragen ihre Kulisse selbst: 9nrtspl1.xfbin
+        // (Baryon) haelt neben 38 Animationen 99 Effekt-Clumps.
+        for (const std::string& p : f.anims)
+            if (std::find(kandidaten.begin(), kandidaten.end(), p) == kandidaten.end()) kandidaten.push_back(p);
         for (const std::string& p : d.Pfade()) {
             if (std::find(kandidaten.begin(), kandidaten.end(), p) != kandidaten.end()) continue;
             const std::string n = xfbin::DateiName(p);
@@ -647,38 +652,12 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
 
     x.SetSplitByMaterial(false);
 
-    // WC3: Blickrichtung. Storm-Figuren laufen in Max nach +Y;
-    // WhiteoutDex schreibt MDX = (-Y, X, Z), eine Einheit, die in
-    // Warcraft III nach vorn (+X) schauen soll, muss in Max nach
-    // -Y blicken. Ein Helfer ueber den obersten Knochen dreht die
-    // Figur um 180 Grad - die Figur selbst bleibt unangetastet,
-    // und die WC3-Haltung "auf der Stelle" rechnet im Raum des
-    // Elternknotens weiter.
-    if (o.wc3) {
-        std::wistringstream rep(x.GetLayerReport());
-        std::vector<INode*> oben;
-        std::wstring z;
-        while (std::getline(rep, z)) {
-            const size_t a = z.rfind(L'	');
-            if (a == std::wstring::npos || z.find(L"	bone	") == std::wstring::npos) continue;
-            INode* n = ip->GetINodeByHandle(static_cast<ULONG>(_wtoi64(z.c_str() + a + 1)));
-            if (n != nullptr && n->GetParentNode() != nullptr && n->GetParentNode()->IsRootNode()) oben.push_back(n);
-        }
-        if (Object* p = static_cast<Object*>(ip->CreateInstance(HELPER_CLASS_ID, Class_ID(POINTHELP_CLASS_ID, 0)))) {
-            INode* helfer = ip->CreateObjectNode(p);
-            if (helfer != nullptr) {
-                const std::wstring hn = anzeige + L" WC3 root";
-                helfer->SetName(const_cast<MCHAR*>(hn.c_str()));
-                for (INode* n : oben) helfer->AttachChild(n, 1);
-                Matrix3 tm;
-                tm.IdentityMatrix();
-                tm.RotateZ(PI);
-                helfer->SetNodeTM(0, tm);
-                helfer->SetUserPropString(_T("xfbin_code"), Breit(f.code).c_str());
-                Log("  WC3: %zu Wurzelknochen unter \"%s\" um 180 Grad gedreht", oben.size(), Utf8(hn).c_str());
-            }
-        }
-    }
+    // WC3: Blickrichtung. WhiteoutDex schreibt MDX = (-Y, X, Z); eine
+    // Einheit, die in Warcraft III nach vorn (+X) schaut, schaut in Max
+    // nach -Y. Genau so liegen die Storm-Figuren schon da - in der
+    // Ruhepose und in allen Animationen (gemessen: Augen vor der
+    // Kopfmitte in -Y). Bis 3.0.0 drehte ein Helfer "WC3 root" sie um
+    // 180 Grad - und damit mit dem Ruecken nach vorn. Keine Drehung.
 
     // WC3: den Szenen-Check von WhiteoutDex selbst die Reste
     // erledigen lassen - eindeutige Namen (Mesh und Knochen heissen

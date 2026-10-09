@@ -68,6 +68,7 @@ struct ImportOptionen {
     bool  effekte    = true;    // Effektmodelle, die die Animationen ansprechen
     bool  wc3        = false;   // fuer WhiteoutDex/Warcraft III: je Material ein Mesh, Blick nach -Y
     bool  leeren     = false;   // Szene vorher leeren
+    int   farbe      = 0;       // Farbvariante: welches Bild mehrbildriger Texturen (0 = Standard)
     bool  ebenen     = true;
     bool  medit      = true;
     bool  lodWeg     = true;
