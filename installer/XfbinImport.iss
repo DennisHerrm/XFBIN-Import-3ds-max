@@ -42,17 +42,18 @@ AppUpdatesURL={#AppURL}/releases
 AppCopyright=Copyright (c) 2026 {#AppPublisher}
 
 ; Autodesk fixes the location - there is nothing to choose.
+;   all users   : %ProgramData%\Autodesk\ApplicationPlugins  (default)
 ;   only for me : %APPDATA%\Autodesk\ApplicationPlugins
-;   all users   : %ProgramData%\Autodesk\ApplicationPlugins
 DefaultDirName={autoappdata}\Autodesk\ApplicationPlugins\XfbinImport
 DisableDirPage=yes
 DisableProgramGroupPage=yes
 DisableReadyPage=no
 UsedUserAreasWarning=no
 
-; Per-user by default, so no UAC prompt. The dialog lets the
-; user switch to an all-users install.
-PrivilegesRequired=lowest
+; All users by default, next to WhiteoutDex and the other
+; importers. The first dialog still offers "only for me", which
+; needs no administrator rights.
+PrivilegesRequired=admin
 PrivilegesRequiredOverridesAllowed=dialog
 
 ; Keep the uninstaller out of the package root so the folder
@@ -104,6 +105,9 @@ de.MaxRunning=3ds Max laeuft noch.%n%nSolange 3ds Max offen ist, ist die Plugin-
 ; Remove files left by an older version (or a manual install)
 ; so no stale plugin build stays behind.
 Type: filesandordirs; Name: "{app}\Contents"
+; Up to 2.x the package went to the user folder. Two copies would
+; make 3ds Max load the plugin twice.
+Type: filesandordirs; Name: "{userappdata}\Autodesk\ApplicationPlugins\XfbinImport"; Check: IsAdminInstallMode
 
 [Files]
 Source: "{#PackageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs

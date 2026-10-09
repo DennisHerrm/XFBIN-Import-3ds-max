@@ -2,20 +2,23 @@
 REM ============================================================
 REM  XFBIN Import for 3ds Max - remove a ZIP installation
 REM
-REM  Removes %APPDATA%\Autodesk\ApplicationPlugins\XfbinImport.
+REM  Removes %ProgramData%\Autodesk\ApplicationPlugins\XfbinImport
+REM  and an old copy in %APPDATA% (up to 2.x).
 REM  If you used the Setup .exe, uninstall it from
 REM  Windows Settings -> Apps instead.
 REM ============================================================
 
 setlocal enabledelayedexpansion
-set "DEST=%APPDATA%\Autodesk\ApplicationPlugins\XfbinImport"
+set "DEST=%ProgramData%\Autodesk\ApplicationPlugins\XfbinImport"
+set "ALT=%APPDATA%\Autodesk\ApplicationPlugins\XfbinImport"
+if exist "%ALT%" rmdir /s /q "%ALT%" >nul 2>&1
 
 echo.
 echo Removing: %DEST%
 echo.
 
 if not exist "%DEST%" (
-    echo Nothing to do - XFBIN Import is not installed for this user.
+    echo Nothing to do - XFBIN Import is not installed.
     echo.
     pause
     exit /b 0

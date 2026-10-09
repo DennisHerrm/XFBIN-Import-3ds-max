@@ -74,9 +74,10 @@ plugin.
 
 1. Download **`XfbinImport-<version>-Setup.exe`** from the
    [latest release](https://github.com/DennisHerrm/XFBIN-Import-3ds-max/releases/latest).
-2. Run it. It installs for your Windows account only, so no
-   administrator rights are needed. (To install for every user on the
-   PC, pick *Install for all users* in the first dialog.)
+2. Run it. It installs for all users into
+   `C:\ProgramData\Autodesk\ApplicationPlugins`, next to WhiteoutDex and
+   other plugins. Without administrator rights, pick *Install for me
+   only* in the first dialog.
 3. Start 3ds Max and open **DH Tools → XFBIN Import**.
 
 **Updating:** run the Setup of the newer version — it replaces the old
@@ -102,7 +103,7 @@ the matching plugin build by itself.
 2. Double-click **`Install.bat`**. `Uninstall.bat` removes it again.
 
 Or copy the `XfbinImport` folder from the ZIP by hand into
-`%APPDATA%\Autodesk\ApplicationPlugins` — see below.
+`%ProgramData%\Autodesk\ApplicationPlugins` — see below.
 
 <details>
 <summary><b>Where the plugin goes, and what the folder must look like</b></summary>
@@ -110,18 +111,20 @@ Or copy the `XfbinImport` folder from the ZIP by hand into
 Paste this into the Explorer address bar:
 
 ```
-%APPDATA%\Autodesk\ApplicationPlugins
+%ProgramData%\Autodesk\ApplicationPlugins
 ```
 
-It expands to `C:\Users\<you>\AppData\Roaming\Autodesk\ApplicationPlugins`.
-3ds Max scans this folder on every start. It is the per-user location,
-so no administrator rights are needed. (An all-users Setup installs to
-`%ProgramData%\Autodesk\ApplicationPlugins` instead.)
+It expands to `C:\ProgramData\Autodesk\ApplicationPlugins`. 3ds Max
+scans this folder on every start, for every user. Users may create
+folders there, so no administrator rights are needed.
+(`%APPDATA%\Autodesk\ApplicationPlugins` works too, for one user only;
+versions up to 2.x installed there — the 3.0 installers remove that old
+copy, otherwise Max would load the plugin twice.)
 
 The `XfbinImport` folder has to end up looking exactly like this:
 
 ```text
-%APPDATA%\Autodesk\ApplicationPlugins\
+%ProgramData%\Autodesk\ApplicationPlugins\
 └── XfbinImport\
     ├── PackageContents.xml
     └── Contents\

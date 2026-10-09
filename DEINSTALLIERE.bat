@@ -1,46 +1,30 @@
 @echo off
 REM ============================================================
 REM  XFBIN Import - Deinstallieren
-REM  Entfernt das Paket aus ApplicationPlugins.
+REM  Entfernt das Paket aus ApplicationPlugins - aus dem Ordner
+REM  fuer alle Benutzer (%ProgramData%) und eine alte Kopie im
+REM  Benutzerordner (%APPDATA%, bis 2.x).
 REM ============================================================
 
 setlocal enabledelayedexpansion
-set "DEST=%APPDATA%\Autodesk\ApplicationPlugins\XfbinImport"
+set "DEST=%ProgramData%\Autodesk\ApplicationPlugins\XfbinImport"
+set "ALT=%APPDATA%\Autodesk\ApplicationPlugins\XfbinImport"
 
 echo.
-echo Entferne: %DEST%
-echo.
-
-if not exist "%DEST%" (
-    echo Nichts zu tun - Paket ist nicht installiert.
-    pause
-    exit /b 0
-)
-
-REM Echter Sperrtest statt einer tasklist-Abfrage: die vorhandene
-REM Datei zum Anhaengen oeffnen, ohne etwas zu schreiben. Klappt
-REM das nicht, haelt ein laufendes Max sie offen.
-set "LOCKED="
-for %%V in (2016 2017 2018 2019 2020 2021 2022 2023 2024 2025 2026 2027) do (
-    if exist "%DEST%\Contents\%%V\XfbinImport.dlu" (
-        (call ) 2>nul 1>>"%DEST%\Contents\%%V\XfbinImport.dlu" || set "LOCKED=1"
+set "GEFUNDEN="
+for %%D in ("%DEST%" "%ALT%") do (
+    if exist "%%~D" (
+        set "GEFUNDEN=1"
+        echo Entferne: %%~D
+        rmdir /s /q "%%~D" >nul 2>&1
+        if exist "%%~D" (
+            echo   FEHLER: gesperrt - 3ds Max laeuft vermutlich noch. Bitte schliessen und erneut starten.
+        ) else (
+            echo   entfernt.
+        )
     )
 )
-
-if defined LOCKED (
-    echo FEHLER: Die Plugin-Datei ist gesperrt.
-    echo 3ds Max laeuft vermutlich noch. Bitte schliessen und erneut starten.
-    pause
-    exit /b 1
-)
-
-rmdir /s /q "%DEST%"
-if exist "%DEST%" (
-    echo FEHLER: Ordner konnte nicht entfernt werden.
-    pause
-    exit /b 1
-)
-
-echo Entfernt.
+if not defined GEFUNDEN echo Nichts zu tun - XFBIN Import ist nicht installiert.
+echo.
 pause
 exit /b 0

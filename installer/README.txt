@@ -11,7 +11,7 @@ INSTALL
   3. Start 3ds Max and open:  DH Tools > XFBIN Import
 
   Manual alternative: copy the XfbinImport folder into
-    %APPDATA%\Autodesk\ApplicationPlugins
+    %ProgramData%\Autodesk\ApplicationPlugins
 
 UNINSTALL
   Close 3ds Max and double-click Uninstall.bat.

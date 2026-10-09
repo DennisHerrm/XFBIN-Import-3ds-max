@@ -212,17 +212,20 @@ std::wstring WriteEmbeddedScript() {
 }
 
 bool InstalledScriptExists() {
-    // %APPDATA%\Autodesk\ApplicationPlugins\XfbinImport\Contents\
-    //   MacroScripts\XfbinImport.mcr
-    wchar_t appdata[MAX_PATH] = { 0 };
-    const DWORD n = GetEnvironmentVariableW(L"APPDATA", appdata, MAX_PATH);
-    if (n == 0 || n >= MAX_PATH) return false;
-
-    const std::wstring path = std::wstring(appdata) +
-        L"\\Autodesk\\ApplicationPlugins\\XfbinImport\\Contents"
-        L"\\MacroScripts\\XfbinImport.mcr";
-
-    return GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES;
+    // <ProgramData oder APPDATA>\Autodesk\ApplicationPlugins\
+    //   XfbinImport\Contents\MacroScripts\XfbinImport.mcr
+    // Seit 3.0 installiert das Paket fuer alle Benutzer nach
+    // ProgramData; bis 2.x lag es im Benutzerordner.
+    for (const wchar_t* var : { L"ProgramData", L"APPDATA" }) {
+        wchar_t basis[MAX_PATH] = { 0 };
+        const DWORD n = GetEnvironmentVariableW(var, basis, MAX_PATH);
+        if (n == 0 || n >= MAX_PATH) continue;
+        const std::wstring path = std::wstring(basis) +
+            L"\\Autodesk\\ApplicationPlugins\\XfbinImport\\Contents"
+            L"\\MacroScripts\\XfbinImport.mcr";
+        if (GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES) return true;
+    }
+    return false;
 }
 
 void OnStartup(void*, NotifyInfo*) {

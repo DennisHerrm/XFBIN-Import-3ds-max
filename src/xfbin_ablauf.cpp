@@ -537,6 +537,17 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
         }
     }
 
+    // WC3: den Szenen-Check von WhiteoutDex selbst die Reste
+    // erledigen lassen - eindeutige Namen (Mesh und Knochen heissen
+    // im Spiel oft gleich), Wc3-Materialien statt Standard,
+    // gleiche Materialien zusammengefasst. Die Diffuse-Textur
+    // uebernimmt WhiteoutDex dabei als dasselbe Objekt; ihre
+    // UV-Keys - die Texturanimation - bleiben also erhalten.
+    if (o.wc3) {
+        FuehreSkript(L"(try (if wdxSceneFixAll != undefined do (local n = wdxSceneFixAll(); format \"XFBIN Import: WhiteoutDex scene fix: % changes\\n\" n)) catch ())");
+        Log("  WC3: WhiteoutDex-Szenencheck (wdxSceneFixAll) ausgefuehrt, falls installiert");
+    }
+
     g_figur = f;
     g_figurDa = true;
     g_effektClumps = effektClumps;

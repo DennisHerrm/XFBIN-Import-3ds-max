@@ -3,8 +3,10 @@ REM ============================================================
 REM  XFBIN Import for 3ds Max - install from the ZIP package
 REM
 REM  Copies the XfbinImport folder next to this file into
-REM    %APPDATA%\Autodesk\ApplicationPlugins\XfbinImport
-REM  (per user, no administrator rights needed).
+REM    %ProgramData%\Autodesk\ApplicationPlugins\XfbinImport
+REM  (for all users; users may create folders there, so no
+REM  administrator rights are needed). An old copy in the user
+REM  folder (%APPDATA%, up to 2.x) is removed.
 REM
 REM  The Setup .exe from the release page does the same.
 REM ============================================================
@@ -13,7 +15,8 @@ setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
 set "PKG=%~dp0XfbinImport"
-set "DEST=%APPDATA%\Autodesk\ApplicationPlugins\XfbinImport"
+set "DEST=%ProgramData%\Autodesk\ApplicationPlugins\XfbinImport"
+set "ALT=%APPDATA%\Autodesk\ApplicationPlugins\XfbinImport"
 
 echo.
 echo ========================================
@@ -59,6 +62,8 @@ if errorlevel 1 goto :copyfail
 
 if not exist "%DEST%\PackageContents.xml"                   goto :copyfail
 if not exist "%DEST%\Contents\MacroScripts\XfbinImport.mcr" goto :copyfail
+
+if exist "%ALT%" rmdir /s /q "%ALT%" >nul 2>&1
 
 echo ========================================
 echo  Installed.

@@ -77,6 +77,16 @@ Nach den WhiteoutDex-Handouts fuer Importer:
   Export die Gewichte aller folgenden).
 Ohne WC3-Modus bleibt alles, wie das Spiel es macht.
 
+### Installation fuer alle Benutzer
+- Das Paket liegt jetzt in `%ProgramData%\Autodesk\ApplicationPlugins`
+  wie WhiteoutDex und die anderen Importer (`INSTALLIERE.bat`, Setup,
+  ZIP). Benutzer duerfen dort Ordner anlegen; das Setup bietet "nur fuer
+  mich" weiter an.
+- Eine alte Kopie im Benutzerordner (`%APPDATA%`, bis 2.x) wird entfernt -
+  sonst laedt Max das Plugin zweimal.
+- `INSTALLIERE.bat` ueberspringt nur den Jahrgang, dessen Max gerade
+  laeuft, statt ganz abzubrechen.
+
 ### Werkzeug
 `xfbindump --spiele`, `--spiel <ordner> katalog | test | extract |
 figur | clumps | chunks | partikel` - alles ohne Max.
