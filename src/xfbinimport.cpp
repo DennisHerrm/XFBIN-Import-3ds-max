@@ -1170,7 +1170,7 @@ bool XfbinImportInterface::ApplySkin(
         Interface* ip, INode* node, size_t clumpSlot,
         const std::vector<std::array<uint32_t, 4>>& vertBoneIds,
         const std::vector<std::array<float, 4>>& vertWeights,
-        std::wstring& why) {
+        std::wstring& why, int fallbackBone) {
 
     Stopwatch sw;
 
@@ -1201,6 +1201,16 @@ bool XfbinImportInterface::ApplySkin(
     if (used.empty()) {
         why = L"keine Vertexgewichte gefunden.";
         return false;
+    }
+
+    // Ersatz-Bone fuer Vertices ohne gueltiges Gewicht: der
+    // Mesh-Bone des Modells - dort laege der Vertex auch ohne Skin.
+    // WhiteoutDex verlangt fuer JEDEN gehaeuteten Vertex ein Gewicht
+    // > 0; ein Vertex ohne verschiebt beim Export die Gewichte aller
+    // folgenden.
+    if (fallbackBone >= 0 && static_cast<size_t>(fallbackBone) < handles.size() && slotOf[fallbackBone] < 0) {
+        slotOf[fallbackBone] = static_cast<int>(used.size());
+        used.push_back(fallbackBone);
     }
 
     Modifier* skinMod = static_cast<Modifier*>(
@@ -1318,6 +1328,7 @@ bool XfbinImportInterface::ApplySkin(
 
     int weighted = 0;
     int rejected = 0;
+    int ersatz   = 0;
 
     for (size_t v = 0; v < vertBoneIds.size(); ++v) {
         tabBones.ZeroCount();
@@ -1336,7 +1347,17 @@ bool XfbinImportInterface::ApplySkin(
             sum += w;
         }
 
-        if (tabBones.Count() == 0 || sum <= 0.0f) continue;
+        if (tabBones.Count() == 0 || sum <= 0.0f) {
+            if (fallbackBone < 0 || slotOf[fallbackBone] < 0) continue;
+            static float eins = 1.0f;
+            INode* bn = boneNodes[static_cast<size_t>(slotOf[fallbackBone])];
+            tabBones.ZeroCount();
+            tabWeights.ZeroCount();
+            tabBones.Append(1, &bn);
+            tabWeights.Append(1, &eins);
+            sum = 1.0f;
+            ++ersatz;
+        }
 
         // ------------------------------------------------------
         //  Normalisieren - und zwar IMMER, nicht nur bei grober
@@ -1372,6 +1393,11 @@ bool XfbinImportInterface::ApplySkin(
     if (weighted == 0) {
         why = L"kein Vertex bekam Gewichte (AddWeights hat alle abgelehnt).";
         return false;
+    }
+
+    if (ersatz > 0) {
+        Log((Msg() << L"Skin '" << node->GetName() << L"': " << ersatz
+                   << L" Vertices ohne Gewicht an den Mesh-Bone gehaengt").str());
     }
 
     if (rejected > 0) {
@@ -1795,7 +1821,8 @@ int XfbinImportInterface::BuildMeshesN(int skipLod, int explicitNormals,
 
           if (useSkin) {
               std::wstring why;
-              if (!ApplySkin(ip, node, clumpSlot, vertBoneIds, vertWeights, why)) {
+              if (!ApplySkin(ip, node, clumpSlot, vertBoneIds, vertWeights, why,
+                           static_cast<int>(model.meshBoneIndex))) {
                   AddWarning(L"Modell '" + pname + L"': " + why);
               } else {
                   ++skinned;
@@ -1917,6 +1944,50 @@ XfbinImportInterface::MeshBones(const std::set<std::string>& clumps) const {
             break;
         }
         out.push_back(mb);
+    }
+    return out;
+}
+
+size_t XfbinImportInterface::KeepAnimsNamed(size_t from, const std::set<std::string>& names) {
+    size_t out = from;
+    for (size_t i = from; i < anims_.size(); ++i) {
+        if (names.count(anims_[i].name) == 0) continue;
+        if (out != i) {
+            anims_[out] = std::move(anims_[i]);
+            if (i < animTags_.size()) animTags_[out] = std::move(animTags_[i]);
+        }
+        ++out;
+    }
+    anims_.resize(out);
+    animTags_.resize(out);
+    animsParsed_ = !anims_.empty();
+    return out - std::min(from, out);
+}
+
+int XfbinImportInterface::AnimIndex(const std::string& name) const {
+    for (size_t i = 0; i < anims_.size(); ++i)
+        if (anims_[i].name == name) return static_cast<int>(i);
+    return -1;
+}
+
+ULONG XfbinImportInterface::FindBone(const std::string& name) const {
+    for (size_t ci = 0; ci < sceneClumps_.size() && ci < boneHandles_.size(); ++ci) {
+        if (sceneInstance_[ci] != 0) continue;
+        const auto& nodes = sceneClumps_[ci].nodes;
+        for (size_t bi = 0; bi < nodes.size() && bi < boneHandles_[ci].size(); ++bi)
+            if (nodes[bi].name == name && boneHandles_[ci][bi] != 0) return boneHandles_[ci][bi];
+    }
+    return 0;
+}
+
+std::vector<ULONG> XfbinImportInterface::ClumpRoots(const std::string& clump) const {
+    std::vector<ULONG> out;
+    for (size_t ci = 0; ci < sceneClumps_.size() && ci < boneHandles_.size(); ++ci) {
+        if (sceneClumps_[ci].name != clump || sceneInstance_[ci] != 0) continue;
+        for (int r : sceneClumps_[ci].roots)
+            if (r >= 0 && static_cast<size_t>(r) < boneHandles_[ci].size() && boneHandles_[ci][static_cast<size_t>(r)] != 0)
+                out.push_back(boneHandles_[ci][static_cast<size_t>(r)]);
+        break;
     }
     return out;
 }
@@ -2227,7 +2298,7 @@ int XfbinImportInterface::BuildAnimAt(int index, float startFrame,
         //  bleibt - ein Sprung bleibt ein Sprung.
         // ------------------------------------------------------
         const bool holdXY = inPlace_ &&
-                            (inPlaceClump_.empty() || sceneClumps_[clumpSlot].name == inPlaceClump_) &&
+                            (inPlaceClumps_.empty() || inPlaceClumps_.count(sceneClumps_[clumpSlot].name) > 0) &&
                             sceneInstance_[clumpSlot] == 0 &&
                             sceneClumps_[clumpSlot].Depth(static_cast<int>(boneSlot)) <= 1;
         const xfbin::CoordNode& restNode = sceneClumps_[clumpSlot].nodes[boneSlot];
@@ -3259,8 +3330,11 @@ const MCHAR* XfbinImportInterface::ApplySequence(int gap, int wc3) {
     xfi::AnimOptionen o;
     o.abstand = std::max(0, gap);
     o.wc3 = wc3 != 0;
-    std::vector<int> alle(anims_.size());
-    for (size_t i = 0; i < alle.size(); ++i) alle[i] = static_cast<int>(i);
+    // Nur die eigenen Animationen - die nachgeladenen
+    // Effekt-Animationen ("#fx") laufen ueber die Partikel mit.
+    std::vector<int> alle;
+    for (size_t i = 0; i < anims_.size(); ++i)
+        if (i >= animTags_.size() || animTags_[i].empty() || animTags_[i][0] != '#') alle.push_back(static_cast<int>(i));
     std::vector<xfi::Sequenz> plan;
     std::wstring bericht;
     const bool ok = xfi::WendeFolgeAn(alle, o, plan, bericht);

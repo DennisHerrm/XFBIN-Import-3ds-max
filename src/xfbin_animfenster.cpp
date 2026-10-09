@@ -76,7 +76,7 @@ const std::string& Gruppe(int i) {
 void FuelleGruppen(Fenster& f) {
     f.gruppen = { std::string() };
     for (const std::string& t : GetXfbinInterface()->AnimTags())
-        if (!t.empty() && std::find(f.gruppen.begin(), f.gruppen.end(), t) == f.gruppen.end()) f.gruppen.push_back(t);
+        if (!t.empty() && t[0] != '#' && std::find(f.gruppen.begin(), f.gruppen.end(), t) == f.gruppen.end()) f.gruppen.push_back(t);
     HWND c = GetDlgItem(f.h, IDC_A_ZEIGE);
     SendMessageW(c, CB_RESETCONTENT, 0, 0);
     for (size_t i = 0; i < f.gruppen.size(); ++i) {
@@ -96,6 +96,7 @@ void Fuelle(Fenster& f) {
     const std::string& gruppe = f.gruppen[static_cast<size_t>(std::max(0, f.zeige))];
     for (size_t i = 0; i < anims.size(); ++i) {
         const std::string& g = Gruppe(static_cast<int>(i));
+        if (!g.empty() && g[0] == '#') continue;   // nachgeladene Effekt-Animation
         if (!gruppe.empty() && g != gruppe) continue;
         const std::string k = xfbin::Klein(anims[i].name + " " + g);
         bool alle = true;
@@ -111,7 +112,9 @@ void Fuelle(Fenster& f) {
     if (SzenenFigur() == nullptr) {
         Status(f, L"No character imported in this session - open \"Import Naruto Storm\" and import one first.", true);
     } else {
-        Status(f, std::to_wstring(f.sichtbar.size()) + L" of " + std::to_wstring(anims.size()) +
+        size_t eigene = 0;
+        for (size_t i = 0; i < anims.size(); ++i) { const std::string& g = Gruppe(static_cast<int>(i)); if (g.empty() || g[0] != '#') ++eigene; }
+        Status(f, std::to_wstring(f.sichtbar.size()) + L" of " + std::to_wstring(eigene) +
                       L" animations. Double-click loads one; \"All to timeline\" loads the whole list as sequences.");
     }
 }

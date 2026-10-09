@@ -1,5 +1,86 @@
 # Changelog
 
+## 3.0.0 - Direkt aus dem Spiel, C++-Fenster, Effekte, WC3-Modus
+
+Der Importer liest die Figuren jetzt direkt aus den installierten
+Spielen - kein Auspacken, kein Ordnerwaehlen mehr.
+
+### Spieldaten
+- Storm 3 Full Burst, Storm 4 und Storm Connections werden ueber die
+  Steam-Bibliotheken gefunden (`libraryfolders.vdf`); jeder andere
+  Ordner geht ueber "Browse", auch einer mit ausgepackten `.xfbin`.
+- Neuer CPK-Leser (`xfbin_cpk`): Inhaltsverzeichnis, CRILAYLA,
+  verschachtelte CPKs mit ITOC (Storm 3) und die Verschluesselung der
+  Dateien in Storm 4 und Connections (xorshift128-Schluesselstrom).
+  Gegengeprueft: alle 12.639 Dateien in `data/spc` der drei Spiele
+  lassen sich auspacken und lesen.
+- Patches und DLC ueberschreiben das Grundspiel (`data/patch/12`,
+  `dlc/...`); laesst sich die neueste Fassung nicht lesen, kommt die
+  naechste dran.
+- Figurenkatalog aus `data/spc`: `<code>bod<N>` ist ein Modell, Namen
+  der bekannten Figuren aus einer Tabelle, Reihenfolge aus
+  `characode.bin`.
+
+### Nur die eigenen Animationen
+- Eine Figur bekommt nur Dateien mit IHREM Code (`1nrtbod1c`, `l`,
+  `s`, `i`, `skl`, `spl`, `awa` ...). Fremde Finisher
+  (`1garspl1_fin_1nrt`) gehoeren nicht dazu.
+- Innerhalb einer Datei bleibt nur, was das Skelett der Figur bewegt -
+  Opferanimationen fuer den Gegner fallen weg.
+- Die geteilten Treffer- und Fallanimationen (`1cmnbod1`) gibt es als
+  Schalter "Reactions"; sie werden auf das Skelett der Figur
+  umgeschrieben (`1cmn00t0 pelvis` -> `1nrt00t0 pelvis`).
+
+### C++-Fenster statt MaxScript
+- Figurenfenster und Animationsfenster nach dem Vorbild des Dragon
+  Ball Legends Imports: Max-Theme, WCAG-Kontrast, virtuelle Listen,
+  Suche, Reiter, Statuszeile. `XfbinImport.mcr` oeffnet nur noch die
+  Fenster.
+- `XfbinCpp.showDialog()`, `showAnimDialog()`, dazu
+  `importCharacter`, `applyAnimation` und `applySequence` fuer Tests
+  aus MAXScript.
+- Menue ab Max 2025 als Pre-Start-up-Skript: der Callback kam als
+  Post-Start-up zu spaet, das Menue erschien erst nach einem zweiten
+  Neustart. Neuer Eintrag "XFBIN Animations".
+- `xfbinimport.def` exportiert jetzt auch `LibInitialize` und
+  `LibShutdown` - Max hat beide bisher nie gefunden.
+
+### Effekte
+- Das Effektsystem der Spiele ist entschluesselt: `nuccChunkParticle`
+  nach der Vorlage von Al-Hydra/Storm-Engine-NUCC (MIT), an rund
+  85.000 Emittern aus Storm 3 und 4 nachgeprueft. Zu jeder Animation
+  gehoert ein gleichnamiger Partikel-Chunk; seine Emitter starten
+  Effekt-Animationen (das Rasengan), Mesh- oder Sprite-Partikel an
+  einem Andockknochen, zu Zeiten in 1/100 Frame.
+- Gestartete Effekt-Animationen werden aus `data/effect` geholt (bis
+  vier Ebenen tief), ihre Modelle an den Andockknochen gehaengt und
+  beim Setzen einer Animation zeitversetzt mitgesetzt.
+- Sprite- und Mesh-Schwaerme werden WhiteoutDex "Particle 2" (wenn
+  WhiteoutDex installiert ist), mit Anzahl, Lebensdauer, Spawnradius,
+  Groessen- und Farbverlauf, Textur und Bildraster des Billboards.
+- Effektmodelle, die eine Animation selbst bewegt, kommen aus den
+  Effektdateien der Figur und aus `1efcmn.xfbin` - nur die, die die
+  eigenen Animationen ansprechen.
+- Verwandlungen: spricht eine eigene Animation ein anderes
+  Koerpermodell an (Narutos Erwachen -> `1nrvbod1`), wird es samt
+  seiner Effekte geladen und nur dort gezeigt.
+
+### WC3-Modus
+Nach den WhiteoutDex-Handouts fuer Importer:
+- ein Mesh je Material (kein Multi/Sub, das untexturiert ankaeme),
+- Blick nach -Y ueber einen Helfer "WC3 root",
+- Figur und Verwandlungen auf der Stelle (X/Y der Wurzelknochen fest,
+  Hoehe bleibt), Effekte und Doppelgaenger bewegen sich weiter,
+- Effekte hart an/aus nach Deckkraft, Skalierung und Partikel-
+  Zeitleisten, Step-Keys mit Key an jedem Sequenzrand, Bild 0 aus,
+- jeder gehaeutete Vertex hat ein Gewicht (sonst verschieben sich beim
+  Export die Gewichte aller folgenden).
+Ohne WC3-Modus bleibt alles, wie das Spiel es macht.
+
+### Werkzeug
+`xfbindump --spiele`, `--spiel <ordner> katalog | test | extract |
+figur | clumps | chunks | partikel` - alles ohne Max.
+
 ## 2.1.6 - animHasBones gab es nie
 
 Der Fehler lag weder am Bauen noch am Installieren. Die Funktion war

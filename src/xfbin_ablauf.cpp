@@ -165,6 +165,14 @@ xfbin::FigurEintrag g_figur;
 bool                g_figurDa = false;
 std::wstring        g_figurOrdner;
 std::set<std::string> g_effektClumps;   // Effekt-Clumps der Figur in der Szene
+std::vector<std::string> g_figurClumps;   // die Figur und ihre Verwandlungen (WC3: auf der Stelle)
+
+// Ist das ein Koerpermodell - "<code>bod<N>"?
+bool IstKoerper(const std::string& c) {
+    if (c.size() < 8 || c.compare(4, 3, "bod") != 0 || c.find("cmn") != std::string::npos) return false;
+    for (size_t i = 7; i < c.size(); ++i) if (c[i] < '0' || c[i] > '9') return false;
+    return true;
+}
 
 #if defined(MAX_RELEASE) && (MAX_RELEASE >= 24000)
 bool FuehreSkript(const std::wstring& skript) {
@@ -263,6 +271,7 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
     const DWORD t0 = GetTickCount();
 
     x.Close();
+    EffekteZuruecksetzen();
     if (o.leeren) {
         FuehreSkript(L"delete objects");
         x.ClearScene();
@@ -307,15 +316,36 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
     }
     const size_t animZahl = x.Anims().size();
 
+    // Partikel der eigenen Animationen: welche Effekt-Animationen,
+    // Mesh- und Sprite-Partikel sie starten.
+    EffektVorbereitung ev;
+    if (o.effekte) EffekteVorbereiten(x, d, f.anims, ev);
+
     // --- 2. Modelle ------------------------------------------
     // Das Koerpermodell, dazu eigene Zusatzmodelle, die die
     // Animationen ansprechen (Waffen, Begleiter mit dem Code der
     // Figur) - fremde Modelle nicht.
+    //
+    // Ausnahme Verwandlungen: spricht eine EIGENE Animation ein
+    // anderes Koerpermodell an, ist das die Figur in anderer Form -
+    // Narutos Erwachen (1nrtawa) zeigt den Neunschwaenzigen-Mantel
+    // 1nrvbod1. Das gemeinsame Gegnermodell 1cmnbod1 ist keine.
     std::vector<std::string> modelle = { f.modell };
+    std::vector<std::string> formen;              // Codes der Verwandlungen ("1nrv")
+    g_figurClumps = { clump };
     for (const std::string& c : x.AnimClumpNames(0)) {
-        if (c == clump || c.compare(0, f.code.size(), f.code) != 0) continue;
+        if (c == clump) continue;
+        const bool eigen = c.compare(0, f.code.size(), f.code) == 0;
+        const bool form = !eigen && IstKoerper(c);
+        if (!eigen && !form) continue;
         const std::string p = "data/spc/" + c + ".xfbin";
-        if (d.Gibt(p) && std::find(modelle.begin(), modelle.end(), p) == modelle.end()) modelle.push_back(p);
+        if (!d.Gibt(p) || std::find(modelle.begin(), modelle.end(), p) != modelle.end()) continue;
+        modelle.push_back(p);
+        if (form) {
+            formen.push_back(c.substr(0, 4));
+            g_figurClumps.push_back(c);
+            Log("  Verwandlung: %s", c.c_str());
+        }
     }
 
     std::wstring texOrdner;
@@ -355,18 +385,21 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
     std::set<std::string> effektClumps;
     int effekte = 0;
     if (o.effekte) {
-        std::set<std::string> gesucht;
+        std::set<std::string> gesucht(ev.clumps.begin(), ev.clumps.end());
         for (const std::string& c : x.AnimClumpNames(0)) gesucht.insert(c);
         for (const std::string& c : { clump }) gesucht.erase(c);
         for (const std::string& m : modelle) gesucht.erase(OhneEndung(xfbin::DateiName(m)));
 
         const std::string kurz = f.code.substr(1);   // "nrt"
-        std::vector<std::string> kandidaten;
+        std::vector<std::string> kandidaten = ev.dateien;
         for (const std::string& p : d.Pfade()) {
+            if (std::find(kandidaten.begin(), kandidaten.end(), p) != kandidaten.end()) continue;
             const std::string n = xfbin::DateiName(p);
             const bool spc = p.compare(0, 9, "data/spc/") == 0 && p.find('/', 9) == std::string::npos;
             const bool eff = p.compare(0, 12, "data/effect/") == 0 && p.find('/', 12) == std::string::npos;
-            if (spc && n.compare(0, f.code.size(), f.code) == 0 &&
+            bool eigenerCode = n.compare(0, f.code.size(), f.code) == 0;
+            for (const std::string& fc : formen) if (n.compare(0, fc.size(), fc) == 0) eigenerCode = true;
+            if (spc && eigenerCode &&
                 (n.find("_bod") != std::string::npos || n.find("eff") != std::string::npos) &&
                 n.find("_dmg") == std::string::npos && n.find("_col") == std::string::npos && n.find(".bin") == std::string::npos)
                 kandidaten.push_back(p);
@@ -406,6 +439,14 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
         }
     }
 
+    // --- 2c. Partikel und gestartete Effekte anbinden ---------
+    std::vector<ULONG> partikelKnoten;
+    if (o.effekte && ev.emitter > 0) {
+        std::string elog;
+        partikelKnoten = EffekteAnbinden(x, d, texOrdner, o.massstab, effektClumps, elog);
+        Log("  Partikel: %zu Emitter, %zu Effekt-Animationen - %s", ev.emitter, ev.animsFx, elog.c_str());
+    }
+
     // --- 3. Ebenen, Kennzeichnung, Material-Editor ------------
     const std::wstring anzeige = Breit(f.name == f.code ? f.code : f.name + " " + f.code);
     std::wistringstream bericht2(x.GetLayerReport());
@@ -425,9 +466,14 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
             if (art != L"bone")
                 if (INode* n = ip->GetINodeByHandle(h)) n->SetVisibility(0, 0.0f);
         } else {
-            name = (cl == Breit(clump) ? anzeige : anzeige + L" " + cl);
+            const bool form = cl != Breit(clump) &&
+                              std::find(g_figurClumps.begin(), g_figurClumps.end(), Utf8(cl)) != g_figurClumps.end();
+            name = (cl == Breit(clump) ? anzeige : anzeige + L" " + cl + (form ? L" (form)" : L""));
             if (_wtoi(inst.c_str()) > 0) name += L" #" + std::to_wstring(_wtoi(inst.c_str()) + 1);
             name += (art == L"bone") ? L" - bones" : L" - meshes";
+            // Die Verwandlung erscheint nur, wenn eine Animation sie zeigt.
+            if (form && art != L"bone")
+                if (INode* n = ip->GetINodeByHandle(h)) n->SetVisibility(0, 0.0f);
         }
         ebenen[name].push_back(h);
         if (art == L"bone") {
@@ -438,6 +484,7 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
             }
         }
     }
+    for (ULONG h : partikelKnoten) ebenen[anzeige + L" - particles"].push_back(h);
     if (o.ebenen && !ebenen.empty()) {
         std::wstring sk = L"(\n fn xfL n hs = (\n  local l = LayerManager.getLayerFromName n\n"
                           L"  if l == undefined do l = LayerManager.newLayerFromName n\n"
@@ -498,8 +545,8 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
 
     const double s = (GetTickCount() - t0) / 1000.0;
     wchar_t puffer[400];
-    swprintf_s(puffer, L"%ls: %d bones, %d objects, %d textures, %zu animations from %zu files, %d effects (%.1f s).", anzeige.c_str(),
-               knochen, objekte, texturen, animZahl, dateien, effekte, s);
+    swprintf_s(puffer, L"%ls: %d bones, %d objects, %d textures, %zu animations from %zu files, %d effects, %zu particle emitters (%.1f s).",
+               anzeige.c_str(), knochen, objekte, texturen, animZahl, dateien, effekte, partikelKnoten.size(), s);
     bericht = puffer;
     Log("%s", Utf8(bericht).c_str());
     return true;
@@ -573,59 +620,6 @@ bool Bereit(XfbinImportInterface*& x, Interface*& ip, std::wstring& bericht) {
 
 } // namespace
 
-// ------------------------------------------------------------
-//  WC3: Effekte hart ein- und ausschalten
-//
-//  Im Spiel blendet ein Effekt auf drei Arten: Deckkraftkurve am
-//  Bone (wird schon zur Sichtbarkeit), Skalierung auf fast 0 und
-//  UV-Laufen im Material. Warcraft III kennt davon nur die
-//  Sichtbarkeit. Also wird je Frame nachgesehen: sichtbar laut
-//  Spur UND der Mesh-Bone nicht auf fast 0 geschrumpft - und das
-//  als Step-Keys geschrieben, mit Keys an jedem Sequenzrand, wie
-//  der WC3-Export sie braucht. Ausserhalb der Sequenzen, die den
-//  Effekt ansprechen, und auf Bild 0 (Bind-Pose) ist er aus.
-// ------------------------------------------------------------
-struct Abschnitt { int index; int start; int ende; };
-
-size_t Wc3Effekte(XfbinImportInterface& x, Interface* ip, const std::vector<Abschnitt>& abschnitte, bool bindPose) {
-    if (g_effektClumps.empty() || abschnitte.empty()) return 0;
-    const std::vector<XfbinImportInterface::MeshBone> mbs = x.MeshBones(g_effektClumps);
-    const TimeValue tpf = GetTicksPerFrame();
-    std::map<ULONG, std::vector<std::pair<TimeValue, float>>> keys;
-    for (const XfbinImportInterface::MeshBone& mb : mbs)
-        if (bindPose) keys[mb.mesh].push_back({ 0, 0.0f });
-
-    for (const Abschnitt& a : abschnitte) {
-        if (a.index < 0 || static_cast<size_t>(a.index) >= x.Anims().size()) continue;
-        std::set<std::string> drin;
-        for (const xfbin::AnmClumpRef& c : x.Anims()[static_cast<size_t>(a.index)].clumps) drin.insert(c.clumpName);
-        for (const XfbinImportInterface::MeshBone& mb : mbs) {
-            auto& kl = keys[mb.mesh];
-            INode* mesh = ip->GetINodeByHandle(mb.mesh);
-            INode* bone = mb.bone ? ip->GetINodeByHandle(mb.bone) : nullptr;
-            if (mesh == nullptr || drin.count(mb.clump) == 0) {
-                kl.push_back({ a.start * tpf, 0.0f });
-                kl.push_back({ a.ende * tpf, 0.0f });
-                continue;
-            }
-            bool vorher = false;
-            for (int t = a.start; t <= a.ende; ++t) {
-                const TimeValue tv = t * tpf;
-                bool an = mesh->GetVisibility(tv) > 0.5f;
-                if (an && bone != nullptr) {
-                    const Matrix3 tm = bone->GetNodeTM(tv);
-                    const float s = std::max({ Length(tm.GetRow(0)), Length(tm.GetRow(1)), Length(tm.GetRow(2)) });
-                    an = s > 0.02f;
-                }
-                if (t == a.start || t == a.ende || an != vorher) kl.push_back({ tv, an ? 1.0f : 0.0f });
-                vorher = an;
-            }
-        }
-    }
-    for (const auto& kv : keys) x.SetStepVisibility(kv.first, kv.second);
-    return keys.size();
-}
-
 bool WendeAnimAn(int index, const AnimOptionen& o, std::wstring& bericht) {
     XfbinImportInterface* x = nullptr;
     Interface* ip = nullptr;
@@ -634,7 +628,8 @@ bool WendeAnimAn(int index, const AnimOptionen& o, std::wstring& bericht) {
     LogNeu(("Animation " + x->Anims()[static_cast<size_t>(index)].name).c_str());
 
     x->ClearAnimKeys();
-    x->SetInPlace(o.wc3, g_figurDa ? xfbin::ClumpName(g_figur) : std::string());
+    EffektKeysLoeschen();
+    x->SetInPlace(o.wc3, g_figurClumps);
     const float laenge = x->AnimFrames(index);
     int keys = x->BuildAnimAt(index, 0.0f, 7, o.massstab);
     x->SetInPlace(false);
@@ -643,11 +638,12 @@ bool WendeAnimAn(int index, const AnimOptionen& o, std::wstring& bericht) {
     if (o.material) keys += x->BuildMaterialAnim(index, 0.0f, laenge);
 
     const int ende = std::max(1, static_cast<int>(std::lround(laenge)));
-    size_t fx = 0;
-    if (o.wc3) fx = Wc3Effekte(*x, ip, { { index, 0, ende } }, false);
+    EffektFenster fenster;
+    SpawnsSetzen(*x, index, 0.0, laenge, o.massstab, fenster);
+    const size_t fx = EffektSichtbarkeit(*x, { { index, 0, ende } }, fenster, g_effektClumps, o.wc3, false);
     ZeigeBereich(0, ende);
     bericht = Breit(x->Anims()[static_cast<size_t>(index)].name) + L": " + std::to_wstring(keys) + L" keys, " + std::to_wstring(ende) +
-              L" frames" + (o.wc3 ? L", WC3: in place, " + std::to_wstring(fx) + L" effect meshes switched on/off." : L".");
+              L" frames, " + std::to_wstring(fx) + L" effect objects timed" + (o.wc3 ? L", WC3: in place." : L".");
     Log("%s", Utf8(bericht).c_str());
     return true;
 }
@@ -662,7 +658,9 @@ bool WendeFolgeAn(const std::vector<int>& indizes, const AnimOptionen& o, std::v
     const DWORD t0 = GetTickCount();
 
     x->ClearAnimKeys();
-    x->SetInPlace(o.wc3, g_figurDa ? xfbin::ClumpName(g_figur) : std::string());
+    EffektKeysLoeschen();
+    x->SetInPlace(o.wc3, g_figurClumps);
+    EffektFenster fenster;
 
     // Bild 0 traegt die Bind-Pose, danach folgt eine Animation auf
     // die andere, getrennt durch den Abstand - das Layout, das die
@@ -687,6 +685,7 @@ bool WendeFolgeAn(const std::vector<int>& indizes, const AnimOptionen& o, std::v
         if (o.sicht || o.wc3) x->BuildVisibility(idx, a, e);
         if (o.material) keys += x->BuildMaterialAnim(idx, a, e);
         keys += x->BuildAnimAt(idx, a, 7, o.massstab);
+        SpawnsSetzen(*x, idx, a, e, o.massstab, fenster);
 
         Sequenz sq;
         sq.name = x->Anims()[static_cast<size_t>(idx)].name;
@@ -697,9 +696,9 @@ bool WendeFolgeAn(const std::vector<int>& indizes, const AnimOptionen& o, std::v
         at += laenge + o.abstand;
     }
     size_t fx = 0;
-    if (o.wc3 && !abgebrochen) {
-        ip->ProgressUpdate(100, FALSE, const_cast<wchar_t*>(L"WC3: effect visibility"));
-        fx = Wc3Effekte(*x, ip, abschnitte, true);
+    if (!abgebrochen) {
+        ip->ProgressUpdate(100, FALSE, const_cast<wchar_t*>(L"Effect visibility"));
+        fx = EffektSichtbarkeit(*x, abschnitte, fenster, g_effektClumps, o.wc3, true);
     }
     ip->EnableSceneRedraw();
     ip->ProgressEnd();
@@ -710,7 +709,7 @@ bool WendeFolgeAn(const std::vector<int>& indizes, const AnimOptionen& o, std::v
     ZeigeBereich(0, ende);
 
     wchar_t puffer[300];
-    const std::wstring wc3 = o.wc3 ? L", WC3: in place, " + std::to_wstring(fx) + L" effect meshes switched on/off" : std::wstring();
+    const std::wstring wc3 = L", " + std::to_wstring(fx) + L" effect objects timed" + (o.wc3 ? L", WC3: in place" : L"");
     swprintf_s(puffer, L"%zu sequences, %d keys, %d frames%ls%ls%ls (%.1f s).", plan.size(), keys, ende,
                uebersprungen ? (L", " + std::to_wstring(uebersprungen) + L" without bones skipped").c_str() : L"",
                o.notiz ? L", note track + NeoDexSequenceData" : L"", wc3.c_str(), (GetTickCount() - t0) / 1000.0);

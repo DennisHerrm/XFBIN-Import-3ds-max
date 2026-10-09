@@ -27,8 +27,12 @@
 #include "xfbin_spiel.h"
 
 #include <cstdint>
+#include <map>
+#include <set>
 #include <string>
 #include <vector>
+
+class XfbinImportInterface;
 
 namespace xfi {
 
@@ -106,6 +110,34 @@ bool WendeFolgeAn(const std::vector<int>& indizes, const AnimOptionen& o,
                   std::vector<Sequenz>& plan, std::wstring& bericht);
 bool LiesSequenzen(std::vector<Sequenz>& aus);
 void ZeigeBereich(int startBild, int endeBild);
+
+// ------------------------------------------------------------
+//  Effekte (xfbin_effekte.cpp) - Partikel, gestartete Effekt-
+//  Animationen, Sichtbarkeit
+// ------------------------------------------------------------
+struct Abschnitt { int index; int start; int ende; };
+
+struct EffektVorbereitung {
+    std::set<std::string>    clumps;     // zu bauende Effekt-Clumps
+    std::set<std::string>    sprites;    // Billboards/Clumps der Schwaerme
+    std::vector<std::string> dateien;    // Effektdateien, in denen sie stehen
+    size_t animsFx = 0;
+    size_t emitter = 0;
+};
+
+struct EffektFenster {
+    std::map<ULONG, std::vector<std::pair<double, double>>> fenster;   // Knoten -> sichtbar [a, b)
+};
+
+void EffekteZuruecksetzen();
+void EffekteVorbereiten(XfbinImportInterface& x, const xfbin::Spieldaten& d, const std::vector<std::string>& animDateien,
+                        EffektVorbereitung& v);
+std::vector<ULONG> EffekteAnbinden(XfbinImportInterface& x, const xfbin::Spieldaten& d, const std::wstring& texOrdner, float massstab,
+                                   std::set<std::string>& effektClumps, std::string& log);
+void EffektKeysLoeschen();
+void SpawnsSetzen(XfbinImportInterface& x, int index, double start, double ende, float massstab, EffektFenster& f, int tiefe = 0);
+size_t EffektSichtbarkeit(XfbinImportInterface& x, const std::vector<Abschnitt>& abschnitte, const EffektFenster& f,
+                          const std::set<std::string>& effektClumps, bool wc3, bool bindPose);
 
 // ------------------------------------------------------------
 //  Fenster

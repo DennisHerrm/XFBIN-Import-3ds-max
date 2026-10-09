@@ -515,7 +515,7 @@ public:
     // waagerechte Ruhelage (X/Y), die Hoehe bleibt animiert. Nur
     // fuer das erste Exemplar von 'clump' (die Figur selbst) -
     // Effekte und Doppelgaenger fliegen weiter.
-    void SetInPlace(bool on, const std::string& clump = std::string()) { inPlace_ = on; inPlaceClump_ = clump; }
+    void SetInPlace(bool on, const std::vector<std::string>& clumps = {}) { inPlace_ = on; inPlaceClumps_.clear(); inPlaceClumps_.insert(clumps.begin(), clumps.end()); }
 
     // WC3: beim Mesh-Aufbau ein Objekt je Material (siehe BuildMeshesN).
     void SetSplitByMaterial(bool on) { splitByMaterial_ = on; }
@@ -539,6 +539,18 @@ public:
     // Sichtbarkeit eines Knotens durch diese Step-Keys ersetzen
     // (Zeit in Ticks, Wert 0 oder 1).
     void SetStepVisibility(ULONG handle, const std::vector<std::pair<TimeValue, float>>& keys);
+
+    // Animationen ab 'from' verwerfen, deren Name nicht in 'names'
+    // steht - von einer Effektdatei braucht die Figur nur die
+    // Effekt-Animationen, die ihre Partikel starten.
+    size_t KeepAnimsNamed(size_t from, const std::set<std::string>& names);
+    int AnimIndex(const std::string& name) const;
+
+    // Bone-Knoten (erstes Exemplar) ueber den Namen, 0 = keiner.
+    ULONG FindBone(const std::string& name) const;
+
+    // Wurzel-Bones des ersten Exemplars eines Clumps.
+    std::vector<ULONG> ClumpRoots(const std::string& clump) const;
 
     // Alle Keys der importierten Bones und Meshes loeschen
     // (Position, Rotation, Skalierung, Sichtbarkeit) - bevor eine
@@ -590,7 +602,7 @@ private:
     bool animsParsed_ = false;
     bool inPlace_ = false;
     bool splitByMaterial_ = false;
-    std::string inPlaceClump_;
+    std::set<std::string> inPlaceClumps_;   // die Figur und ihre Verwandlungen
     std::set<std::string> clumpFilter_;
 
     // Gemeinsamer Teil von Open und OpenBuffer.
@@ -700,7 +712,7 @@ private:
     bool ApplySkin(Interface* ip, INode* node, size_t clumpSlot,
                    const std::vector<std::array<uint32_t, 4>>& vertBoneIds,
                    const std::vector<std::array<float, 4>>& vertWeights,
-                   std::wstring& why);
+                   std::wstring& why, int fallbackBone = -1);
 };
 
 // ============================================================

@@ -17,6 +17,7 @@
 #include "../src/xfbin_tex.h"
 #include "../src/xfbin_cpk.h"
 #include "../src/xfbin_spiel.h"
+#include "../src/xfbin_particle.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -148,6 +149,78 @@ int SpielBefehl(int argc, char** argv) {
         std::cout << gut << " gelesen (" << bytes / (1024 * 1024) << " MB), " << schlecht << " gescheitert, "
                   << static_cast<int>(s) << " s\n";
         return schlecht == 0 ? 0 : 1;
+    }
+
+    if (befehl == "partikel" && argc >= 5) {
+        // Partikel aller Dateien unter einem Pfadanfang lesen:
+        //   partikel <pfadanfang> [einzeln]
+        const std::string anfang = xfbin::Klein(argv[4]);
+        const bool einzeln = argc > 5;
+        size_t dateien = 0, systeme = 0, emitter = 0, warn = 0;
+        std::map<uint32_t, size_t> arten;
+        for (const std::string& p : daten.Pfade()) {
+            if (p.compare(0, anfang.size(), anfang) != 0) continue;
+            std::vector<uint8_t> b;
+            xfbin::XfbinFile x;
+            if (!daten.Lies(p, b, fehler) || !xfbin::ReadXfbinBuffer(b.data(), b.size(), x).ok) continue;
+            if (x.CountOfType("nuccChunkParticle") == 0) continue;
+            ++dateien;
+            std::vector<xfbin::ParticleSystem> ps;
+            std::string w;
+            xfbin::ParseParticles(x, ps, w);
+            if (!w.empty()) { ++warn; std::cout << w; }
+            for (const xfbin::ParticleSystem& s : ps) {
+                ++systeme;
+                for (const xfbin::ParticleEmitter& e : s.emitters) {
+                    ++emitter;
+                    ++arten[e.materialKind];
+                    if (!einzeln) continue;
+                    std::cout << s.name << " #" << e.entry << " art=" << e.materialKind << " " << e.materialName << " @" << e.attachBone
+                              << " (" << e.attachOwner << ") n=" << e.count << " r=" << e.radiusStart << " life=" << e.life
+                              << " blow=" << e.blowout << " loop=" << int(e.stretchLoop) << " zeit=";
+                    for (const auto& z : e.timeline) std::cout << (z.first ? "+" : "-") << z.second << " ";
+                    std::cout << '\n';
+                }
+            }
+        }
+        std::cout << dateien << " Dateien, " << systeme << " Partikelsysteme, " << emitter << " Emitter; Arten:";
+        for (const auto& kv : arten) std::cout << " " << kv.first << "=" << kv.second;
+        std::cout << "; " << warn << " Dateien mit Hinweisen" << '\n';
+        return 0;
+    }
+
+    if (befehl == "chunks" && argc >= 7) {
+        // Rohdaten aller Chunks eines Typs in einen Ordner, dazu je
+        // Chunk die Verweistabelle seiner Page (lokaler Index ->
+        // Typ:Name), damit Chunk-Verweise im Inhalt lesbar werden.
+        //   chunks <pfad> <typ> <zielordner>
+        std::vector<uint8_t> b;
+        xfbin::XfbinFile x;
+        if (!daten.Lies(argv[4], b, fehler) || !xfbin::ReadXfbinBuffer(b.data(), b.size(), x).ok) {
+            std::cerr << "FEHLER: " << fehler << "\n";
+            return 1;
+        }
+        const std::string typ = argv[5], ziel = argv[6];
+        size_t n = 0;
+        for (size_t pi = 0; pi < x.pages.size(); ++pi) {
+            const xfbin::XfbinPage& pg = x.pages[pi];
+            for (const xfbin::XfbinChunk& c : pg.chunks) {
+                if (!c.type || *c.type != typ) continue;
+                const std::string basis = ziel + "/" + std::to_string(n++) + "_v" + std::to_string(c.version) + "_" + (c.name ? *c.name : std::string("?"));
+                std::ofstream o(basis + ".bin", std::ios::binary);
+                o.write(reinterpret_cast<const char*>(c.data.data()), static_cast<std::streamsize>(c.data.size()));
+                std::ofstream t(basis + ".map.txt");
+                for (size_t li = 0; li < pg.pageMapIndices.size(); ++li) {
+                    const uint32_t gi = pg.pageMapIndices[li];
+                    if (gi >= x.table.maps.size()) continue;
+                    const xfbin::ChunkMap& m = x.table.maps[gi];
+                    t << li << "\t" << (m.typeIndex < x.table.types.size() ? x.table.types[m.typeIndex] : "?") << "\t"
+                      << (m.nameIndex < x.table.names.size() ? x.table.names[m.nameIndex] : "?") << "\n";
+                }
+            }
+        }
+        std::cout << n << " Chunks vom Typ " << typ << " -> " << ziel << "\n";
+        return 0;
     }
 
     if (befehl == "clumps" && argc >= 5) {

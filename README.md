@@ -6,16 +6,23 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Verified](https://img.shields.io/badge/parser-173k%20lines%20verified-brightgreen)](#how-it-was-verified)
 
-A native 3ds Max plugin that imports CyberConnect2 **XFBIN** files — the
-model, animation and texture container used by the *Naruto: Ultimate
-Ninja Storm* series, *JoJo's Bizarre Adventure: All-Star Battle* and
-other CC2 titles.
+A native 3ds Max plugin that imports characters from the
+*Naruto: Ultimate Ninja Storm* games **straight from the installed
+game** — models, skeletons, skinning, textures, the character's own
+animations and its effects. No unpacking, no folder hunting.
 
-Models, skeletons, skinning, textures and animations, in one step.
+Supported: **Storm 3 Full Burst, Storm 4 and Storm Connections**
+(found automatically in every Steam library), or any folder with
+unpacked CyberConnect2 **XFBIN** files.
+
+A **WC3 mode** prepares everything for the
+[WhiteoutDex](https://github.com/FernandoS27/WhiteoutDex) Warcraft III exporter; without it,
+everything is imported the way the game does it.
 
 Built on the format research of the
 **[Blender XFBIN Importer](https://github.com/Al-Hydra/Blender-XFBIN-Importer)**
-— if you work in Blender, use that one.
+and **[Storm-Engine-NUCC](https://github.com/Al-Hydra/Storm-Engine-NUCC)**
+— if you work in Blender, use the Blender importer.
 
 [![Watch the presentation](https://img.youtube.com/vi/R0Xpl9ZzdVA/maxresdefault.jpg)](https://www.youtube.com/watch?v=R0Xpl9ZzdVA)
 
@@ -33,21 +40,23 @@ Built on the format research of the
 
 | Area | What you get |
 | :--- | :--- |
+| **Game data** | Reads the CPK archives directly — CRILAYLA, nested CPKs (Storm 3) and the encrypted files of Storm 4 / Connections. Patches and DLC override the base game |
+| **Character list** | Every character and costume of the game, searchable by name or code (`1nrt`, `2ssk` …) |
 | **Skeleton** | Full bone hierarchy with bind pose from `nuccChunkClump` / `nuccChunkCoord` |
 | **Meshes** | NUD geometry with UVs, vertex colours, explicit normals and material IDs |
-| **Skinning** | Skin modifier with per-vertex weights, applied through `ISkinImportData` |
+| **Skinning** | Skin modifier with per-vertex weights |
 | **Textures** | NUT textures written out as DDS and wired into Standard materials |
-| **Animations** | All 23 curve formats, quantised values, per-bone keys |
-| **Material animation** | UV offset, tiling and opacity — the UV scrolling on eyes, hair and effect surfaces |
-| **Visibility** | Driven by the opacity channel, as step keys, per model and per sequence |
-| **Accessories** | Weapons and props from separate files, including several instances of the same model |
-| **Several animation files** | A character often has four or more; all of them are read |
-| **Layers** | One layer per model for its meshes, one for its bones |
-| **Sequence mode** | Every animation on one timeline with note tracks — the layout Warcraft 3 tools expect |
+| **Own animations only** | Exactly the character's files (`bod1c`, `bod1l`, `skl1`, `spl1`, `awa` …) and only the clips that move its skeleton. Shared hit reactions (`1cmnbod1`) on request |
+| **Effects** | The game's particle system: effect animations started by each attack (Rasengan …), effect models, mesh and sprite particles as WhiteoutDex *Particle 2*, all timed like in the game |
+| **Transformations** | Forms a character turns into during its own animations (Naruto's awakening → `1nrvbod1`) |
+| **Clones** | A skeleton used several times (shadow clones, two weapons) gets one copy per use |
+| **Material animation** | UV offset, tiling and opacity — sprite flipbooks and UV scrolling |
+| **Timeline** | One clip, or every clip in a row with note track and `NeoDexSequenceData` |
+| **WC3 mode** | One mesh per material, facing −Y, in place, hard effect visibility per sequence |
 
-Everything runs in C++. A character with **1,793 bones**, seventeen
-skeletons and **813,000 keyframes** across 104 animations loads in a
-few seconds.
+Everything runs in C++. Importing Naruto from Storm 4 with 126 own
+animations, 51 effect models and 34 particle emitters takes about four
+seconds; all 126 animations go onto the timeline in under ten.
 
 ---
 
@@ -124,10 +133,11 @@ The `XfbinImport` folder has to end up looking exactly like this:
         ├── 2027\
         │   └── XfbinImport.dlu
         ├── MacroScripts\
-        │   ├── XfbinImport.mcr        the user interface
+        │   ├── XfbinImport.mcr        menu commands
         │   └── XFBIN_Import.ms        optional launcher
-        └── Post-Start-Up_Scripts\
-            ├── XfbinMenu_2016_2024.ms
+        ├── Post-Start-Up_Scripts\
+        │   └── XfbinMenu_2016_2024.ms
+        └── Pre-Start-Up_Scripts\
             └── XfbinMenu_2025_2027.ms
 ```
 
@@ -144,7 +154,7 @@ The `XfbinImport` folder has to end up looking exactly like this:
 After starting 3ds Max, the MAXScript Listener shows:
 
 ```
-XFBIN Import 2.1.6: Plugin geladen, Menue-Callback angemeldet.
+XFBIN Import 3.0.0: Plugin geladen, Menue-Callback angemeldet.
 ```
 
 (on 3ds Max 2016 – 2024: `... Menue registriert (menuMan).`)
@@ -153,19 +163,12 @@ XFBIN Import 2.1.6: Plugin geladen, Menue-Callback angemeldet.
 
 ## Starting it
 
-Four ways, all equivalent:
-
-| Way | Where | Note |
-| :--- | :--- | :--- |
-| **File → Import** | pick any `.xfbin` of the character | The plugin takes the *folder* of that file, so one click covers model, accessories and animations |
-| **Menu** | *DH Tools → XFBIN Import* | On Max 2025+ it may take a second restart — the menu registers through a callback that fires on the next rebuild |
-| **Customize** | *Customize → Customize User Interface → Category "DH Tools"* | Available immediately; put it on a toolbar or a shortcut |
-| **Drag & drop** | `XFBIN_Import.ms` into a viewport | Opens the window right away, also works without installing |
-
-The launcher script does not hold the interface itself. It looks for
-`XfbinImport.mcr` next to it, in the package folder or under
-ApplicationPlugins, loads it and calls the macro — and reports in the
-Listener whether the plugin is loaded at all.
+| Way | Where |
+| :--- | :--- |
+| **Menu** | *DH Tools → XFBIN Import* (characters) and *DH Tools → XFBIN Animations* |
+| **File → Import** | pick any `.xfbin` or `.cpk` of a game — the window opens with that game |
+| **Customize** | *Customize → Customize User Interface → Category "DH Tools"* — put it on a toolbar or a shortcut |
+| **Drag & drop** | `XFBIN_Import.ms` into a viewport |
 
 <details>
 <summary><b>Nothing shows up?</b></summary>
@@ -188,84 +191,82 @@ XfbinCpp.version()
 
 ## Using it
 
-XFBIN characters are spread over several files — the body, the
-animations, and often accessories such as weapons. So you pick the
-**folder**, not a single file.
+### 1. Import a character
 
-You can also reach this through **File → Import** and pick any single
-`.xfbin` — the plugin takes the folder that file sits in and continues
-from step 2.
+**XFBIN Import** lists every installed Storm game in the *Game* box —
+the newest is chosen first. *Browse…* takes any other folder.
 
-1. **Browse…** and choose the folder holding the `.xfbin` files.
-   Every file is read and sorted by content: `nuccChunkClump` means a
-   model, `nuccChunkAnm` means an animation file. File names do not
-   matter.
-2. **Import** — bones, meshes, skinning and textures in one go.
-   Textures land in a `textures` subfolder next to the source file.
-3. Pick an animation and hit **Apply selected**, or **Load all as
-   sequence** for the full set.
+Pick a character (double-click, or *Import*). The tabs separate
+playable characters from bosses and special forms; the search finds
+names and codes (`naruto`, `2ssk`, `bod2` for a second costume).
 
-### Options
-
-| Option | Default | Notes |
+| Switch | Default | What it does |
 | :--- | :---: | :--- |
-| Clear scene first | off | Handy while iterating |
-| Import textures | on | Writes DDS and builds materials |
-| Fill Material Editor | on | Puts the materials into the Compact Material Editor slots |
-| Sort into layers | on | One layer per model for meshes, one for bones |
-| Skip LOD | on | Skips models whose name contains `_lod` |
-| Explicit normals | on | Keeps the cel-shading normals instead of letting Max recompute them |
-| Skin modifier | on | Turn off for geometry and rig without skinning |
-| Bone size | `0` | Bone objects render as bare lines |
-| Scale | `1.0` | The file is in centimetres — use `0.01` for metres |
+| **Textures** | on | Writes the DDS files to `%LOCALAPPDATA%\XfbinImport\textures` and builds materials |
+| **Effects** | on | Effect models, started effect animations and particles of the character's jutsu and ultimates |
+| **Reactions** | off | Adds the shared hit, fall and get-up animations every character uses |
+| **Clear scene** | off | Deletes everything before the import |
+| **WC3 mode** | off | Prepares the scene for WhiteoutDex — see below |
 
-Options for the animation itself:
+### 2. Load animations
 
-| Option | Default | Notes |
+**XFBIN Animations** (or *Animations…* in the first window) lists the
+imported character's own animations with length and group: *Basic,
+Combos, Support, Intro & win, Jutsu, Ultimate, Awakening* (and
+*Reactions* if switched on).
+
+- **Load** (or double-click) puts one animation on the timeline, with
+  its effects.
+- **All to timeline** puts every listed animation in a row: frame 0 is
+  the bind pose, then one sequence after another with the chosen gap,
+  named in a note track on the scene root and in `NeoDexSequenceData`.
+  The *Sequence* box jumps to one of them. Esc cancels.
+
+| Switch | Default | What it does |
 | :--- | :---: | :--- |
-| Create note track | on | Names the sequences on the scene root |
-| Rest keys | on | Keys at both ends for bones the animation does not touch |
-| Visibility | on | On/off keys per model, per sequence |
-| Material anim | on | UV offset, tiling and opacity |
-| Gap | `10` | Frames between two sequences |
+| **WC3 mode** | off | See below |
+| **Note track** | on | Sequence names on the scene root plus `NeoDexSequenceData` |
+| **Rest keys** | on | Bones a clip does not move get bind-pose keys at both ends, so clips do not bleed into each other |
+| **Visibility** | on | Step keys per sequence from the opacity data — weapons, clones and forms appear and vanish |
+| **Material** | on | UV offset, tiling and opacity of the materials |
 
-### Sequence mode
+### Effects
 
-**Load all as sequence** builds a single timeline out of every
-animation in the folder:
+The games drive their effects through particle chunks: every animation
+has one with the same name, and each emitter starts something at a
+dummy bone, at times given in hundredths of a frame:
 
-- Frame 0 holds the **bind pose** as a key, so an exporter finds a
-  defined starting point.
-- Every animation follows in turn, separated by an adjustable gap.
-- A note track named `animations` goes on the scene root, with a key
-  at the start and end of each sequence carrying its name.
-
-Two things make each sequence stand on its own — without them one
-animation bleeds into the next:
-
-**Rest keys.** A typical animation only moves about half the skeleton.
-Bones it does not touch get a bind-pose key at both ends of the
-sequence, so Max has nothing to interpolate across.
-
-**Visibility.** Every mesh gets an on/off key at the start and the end
-of *every* sequence — including the ones where nothing happens at all.
-Three cases are distinguished, the same three the Warcraft 3 tools
-expect:
-
-| Situation | Result |
+| Emitter starts | In Max |
 | :--- | :--- |
-| The animation never mentions this model | invisible for the whole sequence |
-| Its mesh bone has an opacity curve | that curve, including changes mid-animation |
-| It is present but has no curve | visible, with a key at both ends |
+| an **effect animation** (Rasengan, smoke burst …) | its models hang on the dummy bone; the animation is keyed at the start time |
+| a single **mesh** (ring, shock wave) | the mesh, visible for its life time, growing like in the game |
+| a **swarm** of sprites or meshes | a WhiteoutDex *Particle 2* with count, life time, spawn radius, size and colour gradient, texture and flipbook grid — only if WhiteoutDex is installed |
 
-The keys are written as **step keys** — a weapon is either there or it
-is not, and Warcraft 3 has no half-visible object either.
+Effect animations can start further effects; up to four levels are
+followed.
+
+### WC3 mode
+
+Made after the WhiteoutDex importer guidelines, so the exported model
+works without fixing it by hand:
+
+- **One mesh per material** — a Multi/Sub material would export
+  untextured.
+- **Facing −Y** — a helper *WC3 root* turns the character, because
+  WhiteoutDex writes Max −Y as Warcraft's forward.
+- **In place** — the root bones keep their horizontal rest position;
+  jumps keep their height. Effects and clones still move.
+- **Effects on/off** — step keys from opacity, scale and the particle
+  timelines, with a key at every sequence start and end; frame 0 shows
+  no effect.
+- Every skinned vertex has a weight, nothing exported is hidden.
+
+Without WC3 mode the character travels, and effects fade, scale and
+scroll the way the game does it.
 
 > [!TIP]
 > `tools/VIS_CHECK.ms` walks every mesh against every sequence and
-> reports any place where those keys are missing. At 632 meshes and
-> 104 sequences that is about 65,000 pairs — not something to check by
-> eye.
+> reports any place where visibility keys are missing.
 
 ---
 
@@ -294,14 +295,21 @@ xfbindump.exe file.xfbin                    :: summary
 xfbindump.exe file.xfbin --bones --meshes   :: skeleton and geometry stats
 xfbindump.exe file.xfbin --anims-o out.txt  :: full animation dump
 xfbindump.exe file.xfbin --tex-o folder     :: extract textures as DDS
+
+xfbindump.exe --spiele                                 :: installed Storm games
+xfbindump.exe --spiel <game> katalog naruto            :: characters and their files
+xfbindump.exe --spiel <game> figur 1nrt                :: own animations of a character
+xfbindump.exe --spiel <game> extract data/spc/1nrtbod1.xfbin out.xfbin
+xfbindump.exe --spiel <game> test data/spc/            :: unpack and parse every file
+xfbindump.exe --spiel <game> partikel data/spc/1nrtskl1 x   :: particle emitters
 ```
 
 ### Repository layout
 
 | Path | Contents |
 | :--- | :--- |
-| `src/` | The C++ plugin and the XFBIN / NUD / NUT / animation parsers |
-| `scripts/` | MaxScript user interface, launcher and menu registration |
+| `src/` | The C++ plugin: parsers (XFBIN, NUD, NUT, animation, particles, CPK), game catalog, windows and import flow |
+| `scripts/` | Menu commands, launcher and menu registration |
 | `package/` | `PackageContents.xml` — the Autodesk application package manifest |
 | `installer/` | Inno Setup script and the `Install.bat` / `Uninstall.bat` for the ZIP |
 | `tools/` | Verification tools and in-Max check scripts (see below) |
@@ -315,7 +323,7 @@ Needs [Inno Setup 6](https://jrsoftware.org/isinfo.php)
 (`winget install JRSoftware.InnoSetup`).
 
 ```bat
-python tools\VERSION_SETZEN.py 2.1.7   :: sets the version everywhere
+python tools\VERSION_SETZEN.py 3.0.1   :: sets the version everywhere
 BAUE_ALLE.bat                          :: all twelve Max versions
 ERSTELLE_RELEASE.bat                   :: dist\ -> Setup.exe, .zip, SHA256SUMS.txt
 ```
@@ -380,18 +388,25 @@ Three scripts help check the result inside Max:
 
 ## Known limitations
 
+- **Effect spawn timing** comes from the particle chunks. Effects an
+  animation moves *itself* (the boards and lines of an ultimate
+  cutscene) are shown for the whole clip unless their opacity or scale
+  hides them — the game also hides some by moving the sprite off its
+  texture, which is not detected yet.
+- Particle 2 values are mapped from the game data, partly by best
+  guess (speed, gravity, size). Forces such as vortex and wind are not
+  applied. About 100 particle chunks of Storm Connections use a newer
+  layout and are skipped.
+- A started effect animation is played once per use, not once per
+  particle — an emitter that starts twenty copies shows one.
+- During a transformation the normal body stays visible unless the
+  data hides it.
 - Shader-only material values — glare, falloff, blend rate, outline ID
-  — are parsed but have no 3ds Max equivalent. They are reported
-  rather than applied. UV offset, tiling and opacity are applied.
-- Trail and particle chunks (`nuccChunkTrail`, `nuccChunkParticle`)
-  are not imported. A few effect ribbons are driven by them and
-  therefore have no visibility data of their own; they stay visible.
+  — have no 3ds Max equivalent.
 - Of the seven NUT pixel formats, two are verified against real data
   (R5G6B5 and DXT1). The others are implemented but untested.
-- Camera and light entries are parsed and named, but not applied.
-- Import only — there is no exporter yet.
-- CPK-compressed XFBIN files are detected and rejected with a clear
-  message rather than unpacked.
+- Camera and light entries are parsed, but not applied.
+- Import only — there is no exporter back to XFBIN.
 
 ---
 
@@ -405,6 +420,7 @@ format in the first place.
 | [Blender-XFBIN-Importer](https://github.com/Al-Hydra/Blender-XFBIN-Importer) | [Al-Hydra](https://github.com/Al-Hydra) | The current Blender addon (4.2+). Its `xfbin_lib` is the reference implementation this project was verified against, line by line. |
 | [cc2_xfbin_blender](https://github.com/SutandoTsukai181/cc2_xfbin_blender) | [SutandoTsukai181](https://github.com/SutandoTsukai181) | The original addon and `xfbin_lib` (MIT), where the format work started. |
 | [Smash Forge](https://github.com/jam1garner/Smash-Forge) | [jam1garner](https://github.com/jam1garner) | The original NUD and NUT research the container parsing rests on. |
+| [Storm-Engine-NUCC](https://github.com/Al-Hydra/Storm-Engine-NUCC) | [Al-Hydra](https://github.com/Al-Hydra) and contributors | 010 Editor templates (MIT) — the `nuccChunkParticle` and `nuccChunkBillboard` layouts the effect import is built on. |
 
 **Working in Blender?** Use the
 [Blender XFBIN Importer](https://github.com/Al-Hydra/Blender-XFBIN-Importer)

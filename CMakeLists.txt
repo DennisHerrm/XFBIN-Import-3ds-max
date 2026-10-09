@@ -74,6 +74,8 @@ set(XFBIN_PARSER_SOURCES
     src/xfbin_cpk.cpp
     src/xfbin_spiel.h
     src/xfbin_spiel.cpp
+    src/xfbin_particle.h
+    src/xfbin_particle.cpp
 )
 
 # Die Oberflaeche als Ressource. Das Skript wandert damit in die
@@ -105,6 +107,7 @@ if(XFBIN_BUILD_PLUGIN)
         src/xfbin_app.h
         src/xfbin_ui.h
         src/xfbin_ablauf.cpp
+        src/xfbin_effekte.cpp
         src/xfbin_fenster.cpp
         src/xfbin_animfenster.cpp
         ${XFBIN_RESOURCES}
