@@ -7,17 +7,31 @@
 --  XfbinMenu_2025_2027.ms. Die PackageContents.xml sorgt dafuer,
 --  dass jede Max-Version nur ihr passendes Skript bekommt.
 --
---  Ergebnis: Hauptmenue -> "DH Tools" -> "XFBIN Import"
---                                     -> "XFBIN Animations"
+--  Ergebnis: Hauptmenue -> "Ninja Storm Importer" -> "Import Ninja Storm"
+--                                                 -> "Ninja Storm Animations"
+--
+--  menuMan speichert Menues dauerhaft. Das alte Menue "DH Tools"
+--  (bis 2.x) wird deshalb ausgeraeumt: seine beiden XFBIN-Eintraege
+--  fallen weg, und ist es danach leer, verschwindet es ganz.
 -- ============================================================
 
 (
-  local sMenuName = "DH Tools"
-  local sMacroCat = "DH Tools"
-  local aItems = #(#("XFBIN Import", "XfbinImport_Open"), #("XFBIN Animations", "XfbinImport_Anim"))
+  local sMenuName = "Ninja Storm Importer"
+  local sMacroCat = "Ninja Storm Importer"
+  local aItems = #(#("Import Ninja Storm", "XfbinImport_Open"), #("Ninja Storm Animations", "XfbinImport_Anim"))
 
-  -- "DH Tools" kann auch von einem anderen Werkzeug stammen -
-  -- dann kommen nur die fehlenden Eintraege dazu.
+  -- Altes Menue "DH Tools" ausraeumen
+  local mnuAlt = menuMan.findMenu "DH Tools"
+  if (mnuAlt != undefined) then
+  (
+    for i = mnuAlt.numItems() to 1 by -1 do
+    (
+      local sTitel = (mnuAlt.getItem i).getTitle()
+      if (sTitel == "XFBIN Import" or sTitel == "XFBIN Animations") then mnuAlt.removeItemByPosition i
+    ) -- end of item loop
+    if (mnuAlt.numItems() == 0) then menuMan.unRegisterMenu mnuAlt
+  ) -- end of old menu check
+
   local mnu = menuMan.findMenu sMenuName
 
   if (mnu == undefined) then
@@ -66,10 +80,10 @@
 
   if (sVer == undefined) then
   (
-    format "XFBIN Import: Menue registriert, aber XfbinImport.dlu FEHLT.\n"
+    format "Ninja Storm Importer: Menue registriert, aber XfbinImport.dlu FEHLT.\n"
   )
   else
   (
-    format "XFBIN Import %: Plugin geladen, Menue registriert (menuMan).\n" sVer
+    format "Ninja Storm Importer %: Plugin geladen, Menue registriert (menuMan).\n" sVer
   ) -- end of plugin check
 )

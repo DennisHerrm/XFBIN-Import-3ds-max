@@ -193,7 +193,7 @@ void AlleLaden(Fenster& f) {
         wchar_t frage[400];
         swprintf_s(frage, L"Load %zu animations one after another (gap %d frames)?\n\nThe timeline starts at frame 0 with the bind pose. Esc cancels.",
                    f.sichtbar.size(), o.abstand);
-        if (MessageBoxW(f.h, frage, L"XFBIN Animations", MB_YESNO | MB_ICONQUESTION) != IDYES) return;
+        if (MessageBoxW(f.h, frage, L"Ninja Storm Animations", MB_YESNO | MB_ICONQUESTION) != IDYES) return;
     }
     SchreibeEinstellung(L"Abstand", std::to_wstring(o.abstand));
     Status(f, L"Setting keys for " + std::to_wstring(f.sichtbar.size()) + L" animations... (Esc cancels)");
@@ -297,7 +297,7 @@ INT_PTR Verarbeite(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             for (int id : { IDC_A_ZEIGE, IDC_A_SEQUENZ }) SetWindowTheme(GetDlgItem(h, id), L"DarkMode_CFD", nullptr);
         }
         SendDlgItemMessageW(h, IDC_A_LISTE, LB_SETITEMHEIGHT, 0, f->zeilenHoehe + 6);
-        SetWindowTextW(h, (std::wstring(L"XFBIN Animations ") + XFBINIMPORT_VERSION_STR).c_str());
+        SetWindowTextW(h, (std::wstring(L"Ninja Storm Animations ") + XFBINIMPORT_VERSION_STR).c_str());
         const std::wstring figur = SzenenFigurName();
         SetDlgItemTextW(h, IDC_A_FIGUR, figur.empty() ? L"(no character imported)" : figur.c_str());
         const std::wstring abstand = LiesEinstellung(L"Abstand");

@@ -8,7 +8,7 @@ JoJo's Bizarre Adventure ASB and other CC2 titles) into 3ds Max
 INSTALL
   1. Close 3ds Max.
   2. Double-click Install.bat.
-  3. Start 3ds Max and open:  DH Tools > XFBIN Import
+  3. Start 3ds Max and open:  Ninja Storm Importer > Import Ninja Storm
 
   Manual alternative: copy the XfbinImport folder into
     %ProgramData%\Autodesk\ApplicationPlugins

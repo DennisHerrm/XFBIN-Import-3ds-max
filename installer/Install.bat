@@ -71,11 +71,11 @@ echo ========================================
 echo.
 echo Start 3ds Max and open:
 echo.
-echo   DH Tools  -^>  XFBIN Import
+echo   Ninja Storm Importer  -^>  Import Ninja Storm
 echo.
 echo On 3ds Max 2025 and newer the menu may only appear after a
 echo second restart. It is always available under
-echo   Customize -^> Customize User Interface -^> Category "DH Tools"
+echo   Customize -^> Customize User Interface -^> Category "Ninja Storm Importer"
 echo.
 pause
 exit /b 0

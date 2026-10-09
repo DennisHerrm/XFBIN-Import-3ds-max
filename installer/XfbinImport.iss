@@ -94,8 +94,8 @@ Name: "en"; MessagesFile: "compiler:Default.isl"
 Name: "de"; MessagesFile: "compiler:Languages\German.isl"
 
 [Messages]
-en.FinishedLabelNoIcons=Setup has finished installing [name].%n%nStart 3ds Max and open the importer from the main menu:%n    DH Tools > XFBIN Import%n%nOn 3ds Max 2025 and newer the menu may only appear after a second restart. It is always available under Customize > Customize User Interface > Category "DH Tools".
-de.FinishedLabelNoIcons=[name] wurde installiert.%n%n3ds Max starten und den Importer im Hauptmenue oeffnen:%n    DH Tools > XFBIN Import%n%nAb 3ds Max 2025 erscheint das Menue unter Umstaenden erst nach einem zweiten Neustart. Unter Customize > Customize User Interface > Kategorie "DH Tools" ist es immer zu finden.
+en.FinishedLabelNoIcons=Setup has finished installing [name].%n%nStart 3ds Max and open the importer from the main menu:%n    Ninja Storm Importer > Import Ninja Storm%n%nOn 3ds Max 2025 and newer the menu may only appear after a second restart. It is always available under Customize > Customize User Interface > Category "Ninja Storm Importer".
+de.FinishedLabelNoIcons=[name] wurde installiert.%n%n3ds Max starten und den Importer im Hauptmenue oeffnen:%n    Ninja Storm Importer > Import Ninja Storm%n%nAb 3ds Max 2025 erscheint das Menue unter Umstaenden erst nach einem zweiten Neustart. Unter Customize > Customize User Interface > Kategorie "Ninja Storm Importer" ist es immer zu finden.
 
 [CustomMessages]
 en.MaxRunning=3ds Max is running.%n%nThe plugin file is locked while 3ds Max is open. Please save your work, close every 3ds Max window and click Retry.

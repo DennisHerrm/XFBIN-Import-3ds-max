@@ -125,7 +125,7 @@ if !GESPERRT! GTR 0 (
 )
 echo ========================================
 echo.
-echo 3ds Max starten:  DH Tools  -^>  XFBIN Import  /  XFBIN Animations
+echo 3ds Max starten:  Ninja Storm Importer  -^>  Import Ninja Storm  /  Ninja Storm Animations
 echo Test im Listener: XfbinCpp.version^(^)
 echo.
 if not defined XFBIN_NOPAUSE pause

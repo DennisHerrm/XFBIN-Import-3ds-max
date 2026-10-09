@@ -81,7 +81,7 @@ plugin.
    `C:\ProgramData\Autodesk\ApplicationPlugins`, next to WhiteoutDex and
    other plugins. Without administrator rights, pick *Install for me
    only* in the first dialog.
-3. Start 3ds Max and open **DH Tools → XFBIN Import**.
+3. Start 3ds Max and open **Ninja Storm Importer → Import Ninja Storm**.
 
 **Updating:** run the Setup of the newer version — it replaces the old
 one. **Uninstalling:** *Windows Settings → Apps → Installed apps →
@@ -171,9 +171,9 @@ XFBIN Import 3.0.0: Plugin geladen, Menue-Callback angemeldet.
 
 | Way | Where |
 | :--- | :--- |
-| **Menu** | *DH Tools → XFBIN Import* (characters) and *DH Tools → XFBIN Animations* |
+| **Menu** | *Ninja Storm Importer → Import Ninja Storm* (characters) and *Ninja Storm Importer → Ninja Storm Animations* |
 | **File → Import** | pick any `.xfbin` or `.cpk` of a game — the window opens with that game |
-| **Customize** | *Customize → Customize User Interface → Category "DH Tools"* — put it on a toolbar or a shortcut |
+| **Customize** | *Customize → Customize User Interface → Category "Ninja Storm Importer"* — put it on a toolbar or a shortcut |
 | **Drag & drop** | `XFBIN_Import.ms` into a viewport |
 
 <details>

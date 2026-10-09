@@ -767,7 +767,7 @@ bool WendeFolgeAn(const std::vector<int>& indizes, const AnimOptionen& o, std::v
     bool abgebrochen = false;
     std::vector<Abschnitt> abschnitte;
 
-    ip->ProgressStart(const_cast<wchar_t*>(L"XFBIN Import - animations (Esc cancels)"), TRUE, KeinFortschritt, nullptr);
+    ip->ProgressStart(const_cast<wchar_t*>(L"Ninja Storm Importer - animations (Esc cancels)"), TRUE, KeinFortschritt, nullptr);
     ip->DisableSceneRedraw();
     for (size_t i = 0; i < indizes.size(); ++i) {
         const int idx = indizes[i];

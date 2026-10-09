@@ -95,11 +95,11 @@ willst.
 Nach dem Neustart von Max:
 
 ```
-Hauptmenue  ->  DH Tools  ->  XFBIN Import
+Hauptmenue  ->  Ninja Storm Importer  ->  Import Ninja Storm
 ```
 
 Der Eintrag steht ausserdem unter Customize -> Customize User Interface ->
-Category **DH Tools** und laesst sich von dort auf eine Toolbar oder einen
+Category **Ninja Storm Importer** und laesst sich von dort auf eine Toolbar oder einen
 Shortcut legen.
 
 ### Geht es? — Diagnose

@@ -385,13 +385,13 @@ void Einrichten(Fenster& f) {
         SetWindowTheme(GetDlgItem(f.h, IDC_LISTE), L"DarkMode_Explorer", nullptr);
         SetWindowTheme(GetDlgItem(f.h, IDC_SPIEL), L"DarkMode_CFD", nullptr);
     }
-    SetWindowTextW(f.h, (std::wstring(L"XFBIN Import ") + XFBINIMPORT_VERSION_STR + L" - Naruto Ultimate Ninja Storm").c_str());
+    SetWindowTextW(f.h, (std::wstring(L"Ninja Storm Importer ") + XFBINIMPORT_VERSION_STR).c_str());
     {
         const int innen = std::max(3, f.zeilenHoehe / 4);
         SendDlgItemMessageW(f.h, IDC_SUCHE, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(innen, innen));
     }
     SendDlgItemMessageW(f.h, IDC_SUCHE, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"Filter by name or code, e.g.  naruto  or  2ssk"));
-    SetDlgItemTextW(f.h, IDC_FUSS, (std::wstring(L"XFBIN Import ") + XFBINIMPORT_VERSION_STR).c_str());
+    SetDlgItemTextW(f.h, IDC_FUSS, (std::wstring(L"Ninja Storm Importer ") + XFBINIMPORT_VERSION_STR).c_str());
     MerkeAnker(f);
     f.reiter = std::clamp(_wtoi(LiesEinstellung(L"Reiter").c_str()), 0, kReiterZahl - 1);
     f.texturen = LiesEinstellung(L"Texturen") != L"0";

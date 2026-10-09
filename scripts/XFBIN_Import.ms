@@ -6,10 +6,10 @@
     Diese Datei brauchst du im Normalfall NICHT - nach der
     Installation steht das Werkzeug im Menue:
 
-        Hauptmenue  ->  DH Tools  ->  XFBIN Import
+        Hauptmenue  ->  Ninja Storm Importer  ->  Import Ninja Storm
 
     und unter Customize -> Customize User Interface ->
-    Category "DH Tools".
+    Category "Ninja Storm Importer".
 
     Seit 3.0 sind die Fenster Teil des C++ Plugins. Dieser Starter
     oeffnet das Figurenfenster direkt - zum Beispiel per Drag & Drop

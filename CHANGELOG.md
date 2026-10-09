@@ -35,6 +35,14 @@ Spielen - kein Auspacken, kein Ordnerwaehlen mehr.
   Schalter "Reactions"; sie werden auf das Skelett der Figur
   umgeschrieben (`1cmn00t0 pelvis` -> `1nrt00t0 pelvis`).
 
+### Eigenes Menue "Ninja Storm Importer"
+- Wie bei den anderen Importern ("Dragon Ball Legends Tool",
+  "Shinobi Striker Tool") ein eigenes Hauptmenue mit "Import Ninja
+  Storm" und "Ninja Storm Animations"; Fenster heissen genauso.
+- Das alte Sammelmenue "DH Tools" wird in Max 2016-2024 ausgeraeumt;
+  ab 2025 neue Menue-GUIDs. Die Makronamen bleiben, die Kategorie
+  heisst jetzt "Ninja Storm Importer".
+
 ### C++-Fenster statt MaxScript
 - Figurenfenster und Animationsfenster nach dem Vorbild des Dragon
   Ball Legends Imports: Max-Theme, WCAG-Kontrast, virtuelle Listen,
