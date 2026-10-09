@@ -149,6 +149,7 @@
 #include <array>
 #include <memory>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -166,7 +167,7 @@
 #define XFBINIMPORT_SCENE_CLASS_ID Class_ID(0x5d3a71e4, 0x2c86f019)
 #define XFBINIMPORT_INTERFACE_ID Interface_ID(0x2C614F13, 0x5A0D7B23)
 
-#define XFBINIMPORT_VERSION_STR  _T("2.1.6")
+#define XFBINIMPORT_VERSION_STR  _T("3.0.0")
 
 // ============================================================
 //  Function IDs
@@ -241,6 +242,12 @@ enum XfbinImportFnID {
     fn_textureSummary,
     fn_exportTextures,
     fn_buildMaterials,
+    // --- 3.0: C++-Fenster und Spieldaten ---
+    fn_showDialog,
+    fn_showAnimDialog,
+    fn_importCharacter,
+    fn_applyAnimation,
+    fn_applySequence,
 };
 
 // ============================================================
@@ -362,6 +369,11 @@ public:
         FN_0(fn_textureSummary,  TYPE_STRING, GetTextureSummary)
         FN_1(fn_exportTextures,  TYPE_INT,    ExportTextures,  TYPE_STRING)
         FN_1(fn_buildMaterials,  TYPE_INT,    BuildMaterials,  TYPE_STRING)
+        FN_0(fn_showDialog,      TYPE_INT,    ShowDialog)
+        FN_0(fn_showAnimDialog,  TYPE_INT,    ShowAnimDialog)
+        FN_4(fn_importCharacter, TYPE_STRING, ImportCharacter, TYPE_STRING, TYPE_STRING, TYPE_INT, TYPE_INT)
+        FN_2(fn_applyAnimation,  TYPE_STRING, ApplyAnimation,  TYPE_INT, TYPE_INT)
+        FN_2(fn_applySequence,   TYPE_STRING, ApplySequence,   TYPE_INT, TYPE_INT)
     END_FUNCTION_MAP
 
     // --- Von MaxScript aufrufbar ---
@@ -462,6 +474,77 @@ public:
     int ExportTextures(const MCHAR* directory);
     int BuildMaterials(const MCHAR* directory);
 
+    // --- 3.0: die C++-Fenster, und dieselben Ablaeufe fuer Tests ---
+    int ShowDialog();
+    int ShowAnimDialog();
+    // folder "" = zuletzt benutztes Spiel. flags: 1 Texturen,
+    // 2 geteilte Reaktionen, 4 Szene leeren, 8 WC3-Modus,
+    // 16 ohne Effekte. Liefert den Bericht,
+    // bei Fehlern mit "ERROR: " davor.
+    const MCHAR* ImportCharacter(const MCHAR* folder, const MCHAR* code, int costume, int flags);
+    const MCHAR* ApplyAnimation(int index, int wc3);
+    const MCHAR* ApplySequence(int gap, int wc3);
+
+    // ------------------------------------------------------
+    //  Fuer die C++-Fenster (nicht aus MaxScript)
+    //
+    //  Die Fenster lesen die Dateien direkt aus den Spiel-
+    //  archiven - es gibt keinen Pfad, nur einen Puffer.
+    // ------------------------------------------------------
+    int OpenBuffer(const std::vector<uint8_t>& data, const std::wstring& label);
+
+    // Animationen ab Index 'from' auf einen anderen Clump legen:
+    // Clump-Namen fromClump -> toClump, Bone-Namen mit dem Anfang
+    // fromPrefix -> toPrefix. Fuer die geteilten Reaktionen
+    // ("1cmnbod1" -> "1nrtbod1", "1cmn00t0 pelvis" -> "1nrt00t0 pelvis").
+    void RetargetAnims(size_t from, const std::string& fromClump, const std::string& toClump,
+                       const std::string& fromPrefix, const std::string& toPrefix);
+
+    // Animationen ab 'from' verwerfen, die keinen Bone von 'clump'
+    // bewegen - etwa die Opferanimation in einer Jutsu-Datei, die
+    // nur den Gegner anspricht. Liefert die Zahl der behaltenen.
+    size_t KeepAnimsFor(size_t from, const std::string& clump);
+
+    // Gruppe fuer die Anzeige ("Basic", "Jutsu" ...), je Animation.
+    void TagAnims(size_t from, const std::string& tag);
+
+    const std::vector<xfbin::Anm>&  Anims()    const { return anims_; }
+    const std::vector<std::string>& AnimTags() const { return animTags_; }
+
+    // WC3 "auf der Stelle": die Wurzelknochen behalten ihre
+    // waagerechte Ruhelage (X/Y), die Hoehe bleibt animiert. Nur
+    // fuer das erste Exemplar von 'clump' (die Figur selbst) -
+    // Effekte und Doppelgaenger fliegen weiter.
+    void SetInPlace(bool on, const std::string& clump = std::string()) { inPlace_ = on; inPlaceClump_ = clump; }
+
+    // WC3: beim Mesh-Aufbau ein Objekt je Material (siehe BuildMeshesN).
+    void SetSplitByMaterial(bool on) { splitByMaterial_ = on; }
+
+    // Nur diese Clumps bauen (leer = alle). Sammeldateien wie
+    // data/effect/1efcmn.xfbin enthalten ueber 300 Effekte; eine
+    // Figur braucht davon eine Handvoll.
+    void SetClumpFilter(const std::vector<std::string>& names) { clumpFilter_.clear(); clumpFilter_.insert(names.begin(), names.end()); }
+    bool ClumpWanted(const std::string& name) const { return clumpFilter_.empty() || clumpFilter_.count(name) > 0; }
+
+    // Clump-Namen, die die Animationen ab 'from' ansprechen.
+    std::vector<std::string> AnimClumpNames(size_t from) const;
+
+    // Meshes dieser Clumps mit dem Knoten ihres Mesh-Bones:
+    // {Mesh-Handle, Bone-Handle, Clump-Name}. Fuer den WC3-Durchlauf
+    // der Effekte - ihr Ein- und Ausblenden steckt in Deckkraft und
+    // Skalierung dieses Bones.
+    struct MeshBone { ULONG mesh = 0; ULONG bone = 0; std::string clump; };
+    std::vector<MeshBone> MeshBones(const std::set<std::string>& clumps) const;
+
+    // Sichtbarkeit eines Knotens durch diese Step-Keys ersetzen
+    // (Zeit in Ticks, Wert 0 oder 1).
+    void SetStepVisibility(ULONG handle, const std::vector<std::pair<TimeValue, float>>& keys);
+
+    // Alle Keys der importierten Bones und Meshes loeschen
+    // (Position, Rotation, Skalierung, Sichtbarkeit) - bevor eine
+    // neue Animation oder Sequenz kommt.
+    int ClearAnimKeys();
+
 private:
     // --- Persistenter State zwischen den Aufrufen ---
     std::unique_ptr<xfbin::XfbinFile> file_;
@@ -503,7 +586,16 @@ private:
     bool meshesParsed_ = false;
 
     std::vector<xfbin::Anm> anims_;
+    std::vector<std::string> animTags_;   // parallel zu anims_
     bool animsParsed_ = false;
+    bool inPlace_ = false;
+    bool splitByMaterial_ = false;
+    std::string inPlaceClump_;
+    std::set<std::string> clumpFilter_;
+
+    // Gemeinsamer Teil von Open und OpenBuffer.
+    int AdoptFile(std::unique_ptr<xfbin::XfbinFile> parsed, const xfbin::ReadResult& r,
+                  const std::wstring& label);
 
     std::vector<xfbin::XfbinTexture>  textures_;
     std::vector<xfbin::XfbinMaterial> materials_;
@@ -513,7 +605,7 @@ private:
     // Knoten, die buildMeshes angelegt hat, mit dem Index ihres
     // Modells in models_. buildMaterials braucht beides: den
     // Knoten zum Zuweisen und das Modell fuer die Material-IDs.
-    struct MeshRef { ULONG handle = 0; size_t modelIndex = 0; };
+    struct MeshRef { ULONG handle = 0; size_t modelIndex = 0; int subIndex = -1; };   // subIndex >= 0: nur dieses Material
     std::vector<MeshRef> meshNodes_;
 
     // Alle jemals angelegten Mesh-Objekte, ueber Dateigrenzen

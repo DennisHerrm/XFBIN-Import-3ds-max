@@ -71,6 +71,7 @@ REM ---- Paket zusammenstellen - dieselbe Form wie INSTALLIERE.bat ----
 if exist "%DIST%" rmdir /s /q "%DIST%"
 mkdir "%STAGE%\Contents\MacroScripts"          >nul 2>&1
 mkdir "%STAGE%\Contents\Post-Start-Up_Scripts" >nul 2>&1
+mkdir "%STAGE%\Contents\Pre-Start-Up_Scripts"  >nul 2>&1
 
 copy /Y package\XfbinImport\PackageContents.xml "%STAGE%\" >nul
 
@@ -102,7 +103,7 @@ if !MISSING! GTR 0 if not defined XFBIN_ALLOW_PARTIAL (
 copy /Y "%SCRIPTS%\XfbinImport.mcr"        "%STAGE%\Contents\MacroScripts\"          >nul || goto :fail
 copy /Y "%SCRIPTS%\XFBIN_Import.ms"        "%STAGE%\Contents\MacroScripts\"          >nul || goto :fail
 copy /Y "%SCRIPTS%\XfbinMenu_2016_2024.ms" "%STAGE%\Contents\Post-Start-Up_Scripts\" >nul || goto :fail
-copy /Y "%SCRIPTS%\XfbinMenu_2025_2027.ms" "%STAGE%\Contents\Post-Start-Up_Scripts\" >nul || goto :fail
+copy /Y "%SCRIPTS%\XfbinMenu_2025_2027.ms" "%STAGE%\Contents\Pre-Start-Up_Scripts\"  >nul || goto :fail
 
 REM ---- Installer ----
 echo Baue Installer...

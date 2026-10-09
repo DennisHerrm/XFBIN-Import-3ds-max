@@ -9,6 +9,7 @@
 // ============================================================
 
 #include "xfbinimport.h"
+#include "xfbin_app.h"
 
 // ClassDesc2 steht in iparamb2.h. Die neueren SDKs ziehen den
 // Header ueber max.h mit herein, 2016 nicht - dort fehlt sonst die
@@ -79,8 +80,8 @@ XfbinImportInterface* GetXfbinInterface();
 
 class XfbinSceneImport : public SceneImport {
 public:
-    int ExtCount() override                 { return 1; }
-    const MCHAR* Ext(int i) override        { return (i == 0) ? _T("xfbin") : _T(""); }
+    int ExtCount() override                 { return 2; }
+    const MCHAR* Ext(int i) override        { return (i == 0) ? _T("xfbin") : (i == 1) ? _T("cpk") : _T(""); }
 
     // ShortDesc ist das, was in der Formatliste des
     // Import-Dialogs steht - Max haengt die Endung selbst an:
@@ -99,40 +100,29 @@ public:
 
     const MCHAR* LongDesc() override {
         return _T("CyberConnect2 XFBIN - Naruto Ultimate Ninja Storm "
-                  "(Modell, Animationen, Texturen)");
+                  "(Modelle, Animationen, Texturen direkt aus dem Spiel)");
     }
     const MCHAR* AuthorName() override      { return _T("DennisH"); }
     const MCHAR* CopyrightMessage() override { return _T(""); }
     const MCHAR* OtherMessage1() override   { return _T(""); }
     const MCHAR* OtherMessage2() override   { return _T(""); }
 
-    unsigned int Version() override         { return 216; }
+    unsigned int Version() override         { return 300; }
     void ShowAbout(HWND) override           {}
 
     int DoImport(const MCHAR* name, ImpInterface*, Interface*,
                  BOOL suppressPrompts) override {
         if (name == nullptr) return 0;
 
-        // Ordner aus dem Dateipfad ziehen.
-        std::wstring path(name);
-        const size_t slash = path.find_last_of(L"/\\");
-        std::wstring dir = (slash == std::wstring::npos)
-                               ? std::wstring()
-                               : path.substr(0, slash);
-
-        XfbinImportInterface* iface = GetXfbinInterface();
-        if (iface == nullptr) return 0;
-
-        iface->SetPendingFolder(dir);
-
+        // Seit 3.0 liest das Fenster direkt aus den Spielarchiven.
+        // Die gewaehlte Datei sagt nur, WELCHES Spiel gemeint ist:
+        // von ihr aus nach oben bis zum Spielordner.
+        //
         // suppressPrompts ist gesetzt, wenn Max ohne Rueckfragen
         // importieren soll - etwa aus einem Skript heraus. Dann
-        // waere ein Fenster falsch; der Ordner bleibt hinterlegt
-        // und die Oberflaeche holt ihn beim naechsten Oeffnen ab.
+        // waere ein Fenster falsch.
         if (suppressPrompts) return 1;
-
-        iface->RunMacro();
-        return 1;
+        return xfi::ImportiereEingang(name) >= 0 ? 1 : 0;
     }
 };
 

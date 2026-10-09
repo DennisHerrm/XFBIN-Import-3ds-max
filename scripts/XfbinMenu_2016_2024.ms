@@ -1,36 +1,40 @@
 -- ============================================================
 --  XfbinMenu_2016_2024.ms
---  Menueeintrag fuer 3ds Max 2016 bis 2024 (altes menuMan-API)
+--  Menueeintraege fuer 3ds Max 2016 bis 2024 (altes menuMan-API)
+--  Version 3.0.0
 --
 --  Ab 2025 ist menuMan abgeloest - dafuer gibt es
 --  XfbinMenu_2025_2027.ms. Die PackageContents.xml sorgt dafuer,
 --  dass jede Max-Version nur ihr passendes Skript bekommt.
 --
 --  Ergebnis: Hauptmenue -> "DH Tools" -> "XFBIN Import"
+--                                     -> "XFBIN Animations"
 -- ============================================================
 
 (
-  local sMenuName  = "DH Tools"
-  local sItemTitle = "XFBIN Import"
-  local sMacroName = "XfbinImport_Open"
-  local sMacroCat  = "DH Tools"
+  local sMenuName = "DH Tools"
+  local sMacroCat = "DH Tools"
+  local aItems = #(#("XFBIN Import", "XfbinImport_Open"), #("XFBIN Animations", "XfbinImport_Anim"))
 
-  -- Ohne das C++ Plugin ist der Menueeintrag sinnlos. Er wird
-  -- trotzdem angelegt: das Fenster meldet dann selbst, dass die
-  -- DLU fehlt - das ist verstaendlicher als ein fehlender Eintrag.
+  -- "DH Tools" kann auch von einem anderen Werkzeug stammen -
+  -- dann kommen nur die fehlenden Eintraege dazu.
+  local mnu = menuMan.findMenu sMenuName
 
-  local mnuExisting = menuMan.findMenu sMenuName
-
-  if (mnuExisting != undefined) then
+  if (mnu == undefined) then
   (
-    -- Schon vorhanden. Nur pruefen, ob unser Eintrag drinsteht -
-    -- "DH Tools" koennte auch von einem anderen Werkzeug stammen.
-    local bFound = false
+    local mnuBar = menuMan.getMainMenuBar()
+    mnu = menuMan.createMenu sMenuName
+    local itmSub = menuMan.createSubMenuItem sMenuName mnu
+    -- Ans Ende der Menueleiste, also hinter "Help".
+    mnuBar.addItem itmSub (mnuBar.numItems())
+  ) -- end of menu exists check
 
-    for i = 1 to mnuExisting.numItems() while (not bFound) do
+  for aItem in aItems do
+  (
+    local bFound = false
+    for i = 1 to mnu.numItems() while (not bFound) do
     (
-      local itm = mnuExisting.getItem i
-      if ((itm.getTitle()) == sItemTitle) then
+      if (((mnu.getItem i).getTitle()) == aItem[1]) then
       (
         bFound = true
       ) -- end of title check
@@ -38,29 +42,14 @@
 
     if (not bFound) then
     (
-      local actNew = menuMan.createActionItem sMacroName sMacroCat
-      actNew.setTitle sItemTitle
+      local actNew = menuMan.createActionItem aItem[2] sMacroCat
+      actNew.setTitle aItem[1]
       actNew.setUseCustomTitle true
-      mnuExisting.addItem actNew -1
-      menuMan.updateMenuBar()
+      mnu.addItem actNew -1
     ) -- end of not found
-  )
-  else
-  (
-    local mnuBar = menuMan.getMainMenuBar()
-    local mnuNew = menuMan.createMenu sMenuName
+  ) -- end of entry loop
 
-    local actNew = menuMan.createActionItem sMacroName sMacroCat
-    actNew.setTitle sItemTitle
-    actNew.setUseCustomTitle true
-    mnuNew.addItem actNew -1
-
-    local itmSub = menuMan.createSubMenuItem sMenuName mnuNew
-    -- Ans Ende der Menueleiste, also hinter "Help".
-    mnuBar.addItem itmSub (mnuBar.numItems())
-
-    menuMan.updateMenuBar()
-  ) -- end of menu exists check
+  menuMan.updateMenuBar()
 
   -- Startmeldung. Ohne die laesst sich im Listener nicht
   -- unterscheiden, ob das Paket geladen wurde und still war, oder

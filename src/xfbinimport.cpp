@@ -6,6 +6,7 @@
 // ============================================================
 
 #include "xfbinimport.h"
+#include "xfbin_app.h"
 
 #include <iparamb2.h>
 #include <maxscript/maxscript.h>
@@ -197,6 +198,21 @@ static XfbinImportInterface theXfbinImportInterface(
         _T("directory"), 0, TYPE_STRING,
     fn_buildMaterials, _T("buildMaterials"), 0, TYPE_INT, 0, 1,
         _T("directory"), 0, TYPE_STRING,
+
+    // --- 3.0: C++-Fenster und Spieldaten ---
+    fn_showDialog, _T("showDialog"), 0, TYPE_INT, 0, 0,
+    fn_showAnimDialog, _T("showAnimDialog"), 0, TYPE_INT, 0, 0,
+    fn_importCharacter, _T("importCharacter"), 0, TYPE_STRING, 0, 4,
+        _T("folder"), 0, TYPE_STRING,
+        _T("code"), 0, TYPE_STRING,
+        _T("costume"), 0, TYPE_INT,
+        _T("flags"), 0, TYPE_INT,
+    fn_applyAnimation, _T("applyAnimation"), 0, TYPE_STRING, 0, 2,
+        _T("index"), 0, TYPE_INT,
+        _T("wc3"), 0, TYPE_INT,
+    fn_applySequence, _T("applySequence"), 0, TYPE_STRING, 0, 2,
+        _T("gap"), 0, TYPE_INT,
+        _T("wc3"), 0, TYPE_INT,
 
     p_end
 );
@@ -444,6 +460,28 @@ int XfbinImportInterface::Open(const MCHAR* path) {
         xfbin::ReadXfbinFile(WideToUtf8(wpath), *parsed);
     msRead_ = sw.ms();
 
+    return AdoptFile(std::move(parsed), r, wpath);
+}
+
+// Wie Open, nur aus einem Puffer - die Fenster lesen direkt aus
+// den Spielarchiven.
+int XfbinImportInterface::OpenBuffer(const std::vector<uint8_t>& data,
+                                     const std::wstring& label) {
+    ResetDiagnostics();
+    Log(L"open (Spieldaten): " + label);
+
+    auto parsed = std::make_unique<xfbin::XfbinFile>();
+
+    Stopwatch sw;
+    const xfbin::ReadResult r = xfbin::ReadXfbinBuffer(data.data(), data.size(), *parsed);
+    msRead_ = sw.ms();
+
+    return AdoptFile(std::move(parsed), r, label);
+}
+
+int XfbinImportInterface::AdoptFile(std::unique_ptr<xfbin::XfbinFile> parsed,
+                                    const xfbin::ReadResult& r,
+                                    const std::wstring& wpath) {
     if (!r.ok) {
         SetError(Utf8ToWide(r.error));
         file_.reset();
@@ -500,6 +538,7 @@ int XfbinImportInterface::Close() {
     models_.clear();
     meshesParsed_ = false;
     anims_.clear();
+    animTags_.clear();
     animsParsed_ = false;
     textures_.clear();
     materials_.clear();
@@ -800,6 +839,7 @@ int XfbinImportInterface::BuildSkeletonN(int mode, float scale, int copies) {
     // laufender Nummer. Eine schon vorhandene Instanz derselben
     // Nummer wird ueberschrieben statt verdoppelt.
     for (const xfbin::Clump& c : clumps_) {
+        if (!ClumpWanted(c.name)) continue;
         const int n = (copies > 0) ? copies : RequiredInstancesRaw(c.name);
 
         for (int k = 0; k < n; ++k) {
@@ -823,6 +863,7 @@ int XfbinImportInterface::BuildSkeletonN(int mode, float scale, int copies) {
 
     for (size_t ci = 0; ci < clumps_.size(); ++ci) {
       const xfbin::Clump& clump = clumps_[ci];
+      if (!ClumpWanted(clump.name)) continue;
       const int nCopies = (copies > 0) ? copies : RequiredInstancesRaw(clump.name);
 
       for (int copy = 0; copy < nCopies; ++copy) {
@@ -1452,6 +1493,10 @@ int XfbinImportInterface::BuildMeshesN(int skipLod, int explicitNormals,
         // Bei automatischer Zaehlung laeuft die Schleife bis zur
         // groessten vorkommenden Instanzzahl - die meisten Clumps
         // brauchen weniger.
+        // Modelle ausgefilterter Clumps (siehe SetClumpFilter) - und
+        // bei aktivem Filter auch solche ohne Clump - nicht bauen.
+        if (!clumpFilter_.empty() && (clump == nullptr || !ClumpWanted(clump->name))) continue;
+
         if (copies <= 0 && clump != nullptr) {
             bool exists = false;
             for (size_t i = 0; i < sceneClumps_.size(); ++i) {
@@ -1464,278 +1509,301 @@ int XfbinImportInterface::BuildMeshesN(int skipLod, int explicitNormals,
             if (!exists) continue;
         }
 
-        // --- Groessen zaehlen ---
-        int totalVerts = 0;
-        int totalFaces = 0;
-        int uvChannels = 0;
-        bool anyColor  = false;
-        bool anyNormal = false;
-
-        for (const xfbin::NudMeshGroup& g : model.groups) {
-            for (const xfbin::NudMesh& m : g.meshes) {
-                totalVerts += static_cast<int>(m.VertexCount());
-                totalFaces += static_cast<int>(m.TriangleCount());
-                if (m.uvCount > uvChannels) uvChannels = m.uvCount;
-                if (m.HasColor())  anyColor  = true;
-                if (m.HasNormal()) anyNormal = true;
-            }
-        }
-
-        if (totalVerts == 0 || totalFaces == 0) {
-            AddWarning(L"Modell '" + wname + L"' hat keine Geometrie.");
-            continue;
-        }
-
-        TriObject* triObj = CreateNewTriObject();
-        if (triObj == nullptr) {
-            AddWarning(L"Modell '" + wname + L"': TriObject liess sich nicht anlegen.");
-            continue;
-        }
-
-        Mesh& mesh = triObj->GetMesh();
-        mesh.setNumVerts(totalVerts);
-        mesh.setNumFaces(totalFaces);
-
-        // Map-Kanaele: 0 ist die Vertexfarbe, 1..n sind die UVs.
-        // Max zaehlt UV-Kanaele ab 1, NUD ab 0 - daher der Versatz.
-        if (anyColor) {
-            mesh.setMapSupport(0, TRUE);
-            mesh.setNumMapVerts(0, totalVerts);
-        }
-        for (int u = 0; u < uvChannels; ++u) {
-            mesh.setMapSupport(u + 1, TRUE);
-            mesh.setNumMapVerts(u + 1, totalVerts);
-        }
-
-        std::vector<Point3> normals;
-        if (anyNormal && explicitNormals != 0) normals.resize(totalVerts);
-
-        // Gewichte fuer den Skin-Modifier. Sie werden hier
-        // eingesammelt, weil nur an dieser Stelle bekannt ist, auf
-        // welchen Index im zusammengefassten Mesh ein Submesh-Vertex
-        // gelandet ist. In einem zweiten Durchgang muesste man diese
-        // Zuordnung neu herleiten.
-        const bool wantSkin = (applySkin != 0);
-        bool modelIsSkinned = false;
-        for (const xfbin::NudMeshGroup& g : model.groups) {
-            for (const xfbin::NudMesh& m : g.meshes) {
-                if (m.HasBones()) { modelIsSkinned = true; break; }
-            }
-            if (modelIsSkinned) break;
-        }
-
-        std::vector<std::array<uint32_t, 4>> vertBoneIds;
-        std::vector<std::array<float, 4>>    vertWeights;
-        if (wantSkin && modelIsSkinned) {
-            vertBoneIds.assign(static_cast<size_t>(totalVerts), { 0, 0, 0, 0 });
-            vertWeights.assign(static_cast<size_t>(totalVerts), { 0.0f, 0.0f, 0.0f, 0.0f });
-        }
-
-        int vOffset = 0;
-        int fOffset = 0;
-
-        for (const xfbin::NudMeshGroup& g : model.groups) {
-            for (size_t si = 0; si < g.meshes.size(); ++si) {
-                const xfbin::NudMesh& m = g.meshes[si];
-
-                const int nv = static_cast<int>(m.VertexCount());
-                const int nf = static_cast<int>(m.TriangleCount());
-
-                // Material-ID ist die Position des Submeshes in
-                // seiner Gruppe - dieselbe Zuordnung wie im
-                // Blender-Importer.
-                const MtlID matId = static_cast<MtlID>(si);
-
-                for (int i = 0; i < nv; ++i) {
-                    const xfbin::Vec3& p = m.position[static_cast<size_t>(i)];
-
-                    // Zeilenvektor: Punkt links, Matrix rechts.
-                    const double x = p.x * meshMatrix.m[0][0] + p.y * meshMatrix.m[1][0]
-                                   + p.z * meshMatrix.m[2][0] + meshMatrix.m[3][0];
-                    const double y = p.x * meshMatrix.m[0][1] + p.y * meshMatrix.m[1][1]
-                                   + p.z * meshMatrix.m[2][1] + meshMatrix.m[3][1];
-                    const double z = p.x * meshMatrix.m[0][2] + p.y * meshMatrix.m[1][2]
-                                   + p.z * meshMatrix.m[2][2] + meshMatrix.m[3][2];
-
-                    mesh.setVert(vOffset + i,
-                                 Point3(static_cast<float>(x) * scale,
-                                        static_cast<float>(y) * scale,
-                                        static_cast<float>(z) * scale));
-
-                    if (!normals.empty()) {
-                        if (m.HasNormal()) {
-                            const xfbin::Vec3& n = m.normal[static_cast<size_t>(i)];
-                            // Normalen nur drehen, nicht verschieben.
-                            Point3 wn(
-                                static_cast<float>(n.x * meshMatrix.m[0][0] +
-                                                   n.y * meshMatrix.m[1][0] +
-                                                   n.z * meshMatrix.m[2][0]),
-                                static_cast<float>(n.x * meshMatrix.m[0][1] +
-                                                   n.y * meshMatrix.m[1][1] +
-                                                   n.z * meshMatrix.m[2][1]),
-                                static_cast<float>(n.x * meshMatrix.m[0][2] +
-                                                   n.y * meshMatrix.m[1][2] +
-                                                   n.z * meshMatrix.m[2][2]));
-                            normals[static_cast<size_t>(vOffset + i)] =
-                                Normalize(wn);
-                        } else {
-                            normals[static_cast<size_t>(vOffset + i)] =
-                                Point3(0.0f, 0.0f, 1.0f);
-                        }
-                    }
-
-                    if (!vertBoneIds.empty() && m.HasBones()) {
-                        vertBoneIds[static_cast<size_t>(vOffset + i)] =
-                            m.boneIds[static_cast<size_t>(i)];
-                        vertWeights[static_cast<size_t>(vOffset + i)] =
-                            m.boneWeights[static_cast<size_t>(i)];
-                    }
-
-                    if (anyColor) {
-                        if (m.HasColor()) {
-                            const xfbin::Color4& c = m.color[static_cast<size_t>(i)];
-                            mesh.setMapVert(0, vOffset + i,
-                                            UVVert(c.r / 255.0f,
-                                                   c.g / 255.0f,
-                                                   c.b / 255.0f));
-                        } else {
-                            mesh.setMapVert(0, vOffset + i, UVVert(1.0f, 1.0f, 1.0f));
-                        }
-                    }
-
-                    for (int u = 0; u < uvChannels; ++u) {
-                        UVVert t(0.0f, 1.0f, 0.0f);
-                        if (u < m.uvCount) {
-                            const xfbin::Vec2& s = m.uv[static_cast<size_t>(u)][static_cast<size_t>(i)];
-                            // V-Achse spiegeln - wie in Blender auch.
-                            t = UVVert(s.x, 1.0f - s.y, 0.0f);
-                        }
-                        mesh.setMapVert(u + 1, vOffset + i, t);
-                    }
-                }
-
-                for (int f = 0; f < nf; ++f) {
-                    const int a = vOffset + static_cast<int>(m.triangles[static_cast<size_t>(f) * 3 + 0]);
-                    const int b = vOffset + static_cast<int>(m.triangles[static_cast<size_t>(f) * 3 + 1]);
-                    const int c = vOffset + static_cast<int>(m.triangles[static_cast<size_t>(f) * 3 + 2]);
-
-                    Face& face = mesh.faces[fOffset + f];
-                    face.setVerts(a, b, c);
-                    face.setEdgeVisFlags(1, 1, 1);
-                    // Eine Glaettungsgruppe fuer alles. Die echte
-                    // Glaettung kommt aus den expliziten Normalen;
-                    // ohne gesetzte Gruppe waere das Modell
-                    // facettiert.
-                    face.setSmGroup(1);
-                    face.setMatID(matId);
-
-                    if (anyColor) {
-                        mesh.mapFaces(0)[fOffset + f].setTVerts(a, b, c);
-                    }
-                    for (int u = 0; u < uvChannels; ++u) {
-                        mesh.mapFaces(u + 1)[fOffset + f].setTVerts(a, b, c);
-                    }
-                }
-
-                vOffset += nv;
-                fOffset += nf;
-            }
-        }
-
-        // --- Explizite Normalen ---
-        //
-        // Ohne die berechnet Max die Normalen aus den
-        // Glaettungsgruppen neu, und die Kantenrundung eines
-        // Cel-Shading-Modells geht verloren. Die Zuordnung ist
-        // hier einfach: eine Normale je Vertex, jede Ecke zeigt
-        // auf ihren eigenen Vertexindex.
-        if (!normals.empty()) {
-            mesh.SpecifyNormals();
-            MeshNormalSpec* ns = mesh.GetSpecifiedNormals();
-            if (ns != nullptr) {
-                ns->ClearAndFree();
-                ns->SetNumFaces(totalFaces);
-                ns->SetNumNormals(totalVerts);
-
-                for (int i = 0; i < totalVerts; ++i) {
-                    ns->Normal(i) = normals[static_cast<size_t>(i)];
-                    ns->SetNormalExplicit(i, true);
-                }
-                for (int f = 0; f < totalFaces; ++f) {
-                    for (int c = 0; c < 3; ++c) {
-                        ns->Face(f).SpecifyNormalID(
-                            c, mesh.faces[f].getVert(c));
-                    }
-                }
-                ns->SetFlag(MESH_NORMAL_NORMALS_BUILT, true);
-                ns->CheckNormals();
-            }
-        }
-
-        mesh.InvalidateGeomCache();
-
-        INode* node = ip->CreateObjectNode(triObj);
-        if (node == nullptr) {
-            AddWarning(L"Modell '" + wname + L"': Knoten liess sich nicht anlegen.");
-            continue;
-        }
-        node->SetName(const_cast<MCHAR*>(wname.c_str()));
-
-        // Fuer buildMaterials merken, welcher Knoten zu welchem
-        // Modell gehoert.
-        {
-            MeshRef ref;
-            ref.handle     = node->GetHandle();
-            ref.modelIndex = modelIdx;
-            meshNodes_.push_back(ref);
-
-            // Fuer die Sichtbarkeit: ueber Dateigrenzen hinweg
-            // merken, zu welchem Clump und Mesh-Bone dieses
-            // Objekt gehoert.
-            SceneMesh sm;
-            sm.handle    = ref.handle;
-            sm.instance  = copy;
-            if (clump != nullptr) sm.clumpName = clump->name;
-            if (meshBone != nullptr) sm.boneName = meshBone->name;
-            sceneMeshes_.push_back(sm);
-        }
-
         // ------------------------------------------------------
-        //  Verknuepfung mit dem Skelett
+        //  WC3: ein Mesh je Material
         //
-        //  Ungeskinnte Modelle (Zaehne, Augen) haengen an ihrem
-        //  Mesh-Bone und folgen ihm dadurch.
-        //
-        //  Geskinnte Modelle werden NICHT gehaengt. Sonst wirkt die
-        //  Bewegung des Mesh-Bones zweimal: einmal ueber die
-        //  Elternbeziehung und einmal ueber den Skin-Modifier. Der
-        //  Blender-Importer setzt zwar beides, aber Blenders
-        //  Bone-Parenting rechnet die Ruhelage heraus - Max' nicht.
+        //  WhiteoutDex exportiert ein Mesh als EIN Geoset mit EINEM
+        //  Material; ein Multi/Sub aus Standard-Materialien kommt
+        //  untexturiert heraus. Im WC3-Modus wird deshalb jedes
+        //  Submesh (= jedes Material) ein eigenes Objekt, mit
+        //  eigenem Skin. Sonst bleibt es ein Objekt je Modell.
         // ------------------------------------------------------
-        const bool useSkin = wantSkin && modelIsSkinned &&
-                             clump != nullptr && clumpSlot != SIZE_MAX &&
-                             clumpSlot < boneHandles_.size();
+        size_t maxSub = 0;
+        for (const xfbin::NudMeshGroup& g : model.groups) maxSub = std::max(maxSub, g.meshes.size());
+        const int parts = (splitByMaterial_ && maxSub > 1) ? static_cast<int>(maxSub) : 1;
 
-        if (!useSkin && meshBone != nullptr && clumpSlot != SIZE_MAX &&
-            clumpSlot < boneHandles_.size()) {
-            const std::vector<ULONG>& handles = boneHandles_[clumpSlot];
-            if (model.meshBoneIndex < handles.size() &&
-                handles[model.meshBoneIndex] != 0) {
-                INode* boneNode = ip->GetINodeByHandle(handles[model.meshBoneIndex]);
-                if (boneNode != nullptr) boneNode->AttachChild(node, 1);
-            }
-        }
+        for (int part = 0; part < parts; ++part) {
+          const int onlySub = (parts > 1) ? part : -1;
+          const std::wstring pname = (onlySub >= 0) ? wname + L" m" + std::to_wstring(onlySub) : wname;
 
-        if (useSkin) {
-            std::wstring why;
-            if (!ApplySkin(ip, node, clumpSlot, vertBoneIds, vertWeights, why)) {
-                AddWarning(L"Modell '" + wname + L"': " + why);
-            } else {
-                ++skinned;
-            }
-        }
+          // --- Groessen zaehlen ---
+          int totalVerts = 0;
+          int totalFaces = 0;
+          int uvChannels = 0;
+          bool anyColor  = false;
+          bool anyNormal = false;
 
-        ++made;
+          for (const xfbin::NudMeshGroup& g : model.groups) {
+              for (size_t si = 0; si < g.meshes.size(); ++si) {
+                  if (onlySub >= 0 && static_cast<int>(si) != onlySub) continue;
+                  const xfbin::NudMesh& m = g.meshes[si];
+                  totalVerts += static_cast<int>(m.VertexCount());
+                  totalFaces += static_cast<int>(m.TriangleCount());
+                  if (m.uvCount > uvChannels) uvChannels = m.uvCount;
+                  if (m.HasColor())  anyColor  = true;
+                  if (m.HasNormal()) anyNormal = true;
+              }
+          }
+
+          if (totalVerts == 0 || totalFaces == 0) {
+              AddWarning(L"Modell '" + pname + L"' hat keine Geometrie.");
+              continue;
+          }
+
+          TriObject* triObj = CreateNewTriObject();
+          if (triObj == nullptr) {
+              AddWarning(L"Modell '" + pname + L"': TriObject liess sich nicht anlegen.");
+              continue;
+          }
+
+          Mesh& mesh = triObj->GetMesh();
+          mesh.setNumVerts(totalVerts);
+          mesh.setNumFaces(totalFaces);
+
+          // Map-Kanaele: 0 ist die Vertexfarbe, 1..n sind die UVs.
+          // Max zaehlt UV-Kanaele ab 1, NUD ab 0 - daher der Versatz.
+          if (anyColor) {
+              mesh.setMapSupport(0, TRUE);
+              mesh.setNumMapVerts(0, totalVerts);
+          }
+          for (int u = 0; u < uvChannels; ++u) {
+              mesh.setMapSupport(u + 1, TRUE);
+              mesh.setNumMapVerts(u + 1, totalVerts);
+          }
+
+          std::vector<Point3> normals;
+          if (anyNormal && explicitNormals != 0) normals.resize(totalVerts);
+
+          // Gewichte fuer den Skin-Modifier. Sie werden hier
+          // eingesammelt, weil nur an dieser Stelle bekannt ist, auf
+          // welchen Index im zusammengefassten Mesh ein Submesh-Vertex
+          // gelandet ist. In einem zweiten Durchgang muesste man diese
+          // Zuordnung neu herleiten.
+          const bool wantSkin = (applySkin != 0);
+          bool modelIsSkinned = false;
+          for (const xfbin::NudMeshGroup& g : model.groups) {
+              for (size_t si = 0; si < g.meshes.size(); ++si) {
+                  if (onlySub >= 0 && static_cast<int>(si) != onlySub) continue;
+                  if (g.meshes[si].HasBones()) { modelIsSkinned = true; break; }
+              }
+              if (modelIsSkinned) break;
+          }
+
+          std::vector<std::array<uint32_t, 4>> vertBoneIds;
+          std::vector<std::array<float, 4>>    vertWeights;
+          if (wantSkin && modelIsSkinned) {
+              vertBoneIds.assign(static_cast<size_t>(totalVerts), { 0, 0, 0, 0 });
+              vertWeights.assign(static_cast<size_t>(totalVerts), { 0.0f, 0.0f, 0.0f, 0.0f });
+          }
+
+          int vOffset = 0;
+          int fOffset = 0;
+
+          for (const xfbin::NudMeshGroup& g : model.groups) {
+              for (size_t si = 0; si < g.meshes.size(); ++si) {
+                  if (onlySub >= 0 && static_cast<int>(si) != onlySub) continue;
+                  const xfbin::NudMesh& m = g.meshes[si];
+
+                  const int nv = static_cast<int>(m.VertexCount());
+                  const int nf = static_cast<int>(m.TriangleCount());
+
+                  // Material-ID ist die Position des Submeshes in
+                  // seiner Gruppe - dieselbe Zuordnung wie im
+                  // Blender-Importer.
+                  const MtlID matId = static_cast<MtlID>(si);
+
+                  for (int i = 0; i < nv; ++i) {
+                      const xfbin::Vec3& p = m.position[static_cast<size_t>(i)];
+
+                      // Zeilenvektor: Punkt links, Matrix rechts.
+                      const double x = p.x * meshMatrix.m[0][0] + p.y * meshMatrix.m[1][0]
+                                     + p.z * meshMatrix.m[2][0] + meshMatrix.m[3][0];
+                      const double y = p.x * meshMatrix.m[0][1] + p.y * meshMatrix.m[1][1]
+                                     + p.z * meshMatrix.m[2][1] + meshMatrix.m[3][1];
+                      const double z = p.x * meshMatrix.m[0][2] + p.y * meshMatrix.m[1][2]
+                                     + p.z * meshMatrix.m[2][2] + meshMatrix.m[3][2];
+
+                      mesh.setVert(vOffset + i,
+                                   Point3(static_cast<float>(x) * scale,
+                                          static_cast<float>(y) * scale,
+                                          static_cast<float>(z) * scale));
+
+                      if (!normals.empty()) {
+                          if (m.HasNormal()) {
+                              const xfbin::Vec3& n = m.normal[static_cast<size_t>(i)];
+                              // Normalen nur drehen, nicht verschieben.
+                              Point3 wn(
+                                  static_cast<float>(n.x * meshMatrix.m[0][0] +
+                                                     n.y * meshMatrix.m[1][0] +
+                                                     n.z * meshMatrix.m[2][0]),
+                                  static_cast<float>(n.x * meshMatrix.m[0][1] +
+                                                     n.y * meshMatrix.m[1][1] +
+                                                     n.z * meshMatrix.m[2][1]),
+                                  static_cast<float>(n.x * meshMatrix.m[0][2] +
+                                                     n.y * meshMatrix.m[1][2] +
+                                                     n.z * meshMatrix.m[2][2]));
+                              normals[static_cast<size_t>(vOffset + i)] =
+                                  Normalize(wn);
+                          } else {
+                              normals[static_cast<size_t>(vOffset + i)] =
+                                  Point3(0.0f, 0.0f, 1.0f);
+                          }
+                      }
+
+                      if (!vertBoneIds.empty() && m.HasBones()) {
+                          vertBoneIds[static_cast<size_t>(vOffset + i)] =
+                              m.boneIds[static_cast<size_t>(i)];
+                          vertWeights[static_cast<size_t>(vOffset + i)] =
+                              m.boneWeights[static_cast<size_t>(i)];
+                      }
+
+                      if (anyColor) {
+                          if (m.HasColor()) {
+                              const xfbin::Color4& c = m.color[static_cast<size_t>(i)];
+                              mesh.setMapVert(0, vOffset + i,
+                                              UVVert(c.r / 255.0f,
+                                                     c.g / 255.0f,
+                                                     c.b / 255.0f));
+                          } else {
+                              mesh.setMapVert(0, vOffset + i, UVVert(1.0f, 1.0f, 1.0f));
+                          }
+                      }
+
+                      for (int u = 0; u < uvChannels; ++u) {
+                          UVVert t(0.0f, 1.0f, 0.0f);
+                          if (u < m.uvCount) {
+                              const xfbin::Vec2& s = m.uv[static_cast<size_t>(u)][static_cast<size_t>(i)];
+                              // V-Achse spiegeln - wie in Blender auch.
+                              t = UVVert(s.x, 1.0f - s.y, 0.0f);
+                          }
+                          mesh.setMapVert(u + 1, vOffset + i, t);
+                      }
+                  }
+
+                  for (int f = 0; f < nf; ++f) {
+                      const int a = vOffset + static_cast<int>(m.triangles[static_cast<size_t>(f) * 3 + 0]);
+                      const int b = vOffset + static_cast<int>(m.triangles[static_cast<size_t>(f) * 3 + 1]);
+                      const int c = vOffset + static_cast<int>(m.triangles[static_cast<size_t>(f) * 3 + 2]);
+
+                      Face& face = mesh.faces[fOffset + f];
+                      face.setVerts(a, b, c);
+                      face.setEdgeVisFlags(1, 1, 1);
+                      // Eine Glaettungsgruppe fuer alles. Die echte
+                      // Glaettung kommt aus den expliziten Normalen;
+                      // ohne gesetzte Gruppe waere das Modell
+                      // facettiert.
+                      face.setSmGroup(1);
+                      face.setMatID(matId);
+
+                      if (anyColor) {
+                          mesh.mapFaces(0)[fOffset + f].setTVerts(a, b, c);
+                      }
+                      for (int u = 0; u < uvChannels; ++u) {
+                          mesh.mapFaces(u + 1)[fOffset + f].setTVerts(a, b, c);
+                      }
+                  }
+
+                  vOffset += nv;
+                  fOffset += nf;
+              }
+          }
+
+          // --- Explizite Normalen ---
+          //
+          // Ohne die berechnet Max die Normalen aus den
+          // Glaettungsgruppen neu, und die Kantenrundung eines
+          // Cel-Shading-Modells geht verloren. Die Zuordnung ist
+          // hier einfach: eine Normale je Vertex, jede Ecke zeigt
+          // auf ihren eigenen Vertexindex.
+          if (!normals.empty()) {
+              mesh.SpecifyNormals();
+              MeshNormalSpec* ns = mesh.GetSpecifiedNormals();
+              if (ns != nullptr) {
+                  ns->ClearAndFree();
+                  ns->SetNumFaces(totalFaces);
+                  ns->SetNumNormals(totalVerts);
+
+                  for (int i = 0; i < totalVerts; ++i) {
+                      ns->Normal(i) = normals[static_cast<size_t>(i)];
+                      ns->SetNormalExplicit(i, true);
+                  }
+                  for (int f = 0; f < totalFaces; ++f) {
+                      for (int c = 0; c < 3; ++c) {
+                          ns->Face(f).SpecifyNormalID(
+                              c, mesh.faces[f].getVert(c));
+                      }
+                  }
+                  ns->SetFlag(MESH_NORMAL_NORMALS_BUILT, true);
+                  ns->CheckNormals();
+              }
+          }
+
+          mesh.InvalidateGeomCache();
+
+          INode* node = ip->CreateObjectNode(triObj);
+          if (node == nullptr) {
+              AddWarning(L"Modell '" + pname + L"': Knoten liess sich nicht anlegen.");
+              continue;
+          }
+          node->SetName(const_cast<MCHAR*>(pname.c_str()));
+
+          // Fuer buildMaterials merken, welcher Knoten zu welchem
+          // Modell gehoert.
+          {
+              MeshRef ref;
+              ref.handle     = node->GetHandle();
+              ref.modelIndex = modelIdx;
+              ref.subIndex   = onlySub;
+              meshNodes_.push_back(ref);
+
+              // Fuer die Sichtbarkeit: ueber Dateigrenzen hinweg
+              // merken, zu welchem Clump und Mesh-Bone dieses
+              // Objekt gehoert.
+              SceneMesh sm;
+              sm.handle    = ref.handle;
+              sm.instance  = copy;
+              if (clump != nullptr) sm.clumpName = clump->name;
+              if (meshBone != nullptr) sm.boneName = meshBone->name;
+              sceneMeshes_.push_back(sm);
+          }
+
+          // ------------------------------------------------------
+          //  Verknuepfung mit dem Skelett
+          //
+          //  Ungeskinnte Modelle (Zaehne, Augen) haengen an ihrem
+          //  Mesh-Bone und folgen ihm dadurch.
+          //
+          //  Geskinnte Modelle werden NICHT gehaengt. Sonst wirkt die
+          //  Bewegung des Mesh-Bones zweimal: einmal ueber die
+          //  Elternbeziehung und einmal ueber den Skin-Modifier. Der
+          //  Blender-Importer setzt zwar beides, aber Blenders
+          //  Bone-Parenting rechnet die Ruhelage heraus - Max' nicht.
+          // ------------------------------------------------------
+          const bool useSkin = wantSkin && modelIsSkinned &&
+                               clump != nullptr && clumpSlot != SIZE_MAX &&
+                               clumpSlot < boneHandles_.size();
+
+          if (!useSkin && meshBone != nullptr && clumpSlot != SIZE_MAX &&
+              clumpSlot < boneHandles_.size()) {
+              const std::vector<ULONG>& handles = boneHandles_[clumpSlot];
+              if (model.meshBoneIndex < handles.size() &&
+                  handles[model.meshBoneIndex] != 0) {
+                  INode* boneNode = ip->GetINodeByHandle(handles[model.meshBoneIndex]);
+                  if (boneNode != nullptr) boneNode->AttachChild(node, 1);
+              }
+          }
+
+          if (useSkin) {
+              std::wstring why;
+              if (!ApplySkin(ip, node, clumpSlot, vertBoneIds, vertWeights, why)) {
+                  AddWarning(L"Modell '" + pname + L"': " + why);
+              } else {
+                  ++skinned;
+              }
+          }
+
+          ++made;
+        } // Ende der Teile-Schleife
       } // Ende der Modell-Schleife
     } // Ende der Kopien-Schleife
 
@@ -1776,8 +1844,112 @@ int XfbinImportInterface::ParseAnims() {
 int XfbinImportInterface::ClearAnims() {
     const int had = static_cast<int>(anims_.size());
     anims_.clear();
+    animTags_.clear();
     animsParsed_ = false;
     return had;
+}
+
+// ------------------------------------------------------------
+//  Helfer fuer die C++-Fenster
+// ------------------------------------------------------------
+void XfbinImportInterface::RetargetAnims(size_t from, const std::string& fromClump,
+                                         const std::string& toClump,
+                                         const std::string& fromPrefix,
+                                         const std::string& toPrefix) {
+    auto bone = [&](std::string& n) {
+        if (!fromPrefix.empty() && n.compare(0, fromPrefix.size(), fromPrefix) == 0)
+            n = toPrefix + n.substr(fromPrefix.size());
+    };
+    for (size_t i = from; i < anims_.size(); ++i) {
+        xfbin::Anm& a = anims_[i];
+        for (xfbin::AnmClumpRef& c : a.clumps) {
+            if (c.clumpName != fromClump) continue;
+            c.clumpName = toClump;
+            for (std::string& b : c.boneNames) bone(b);
+        }
+        for (xfbin::AnmEntry& e : a.entries) {
+            if (e.clumpName != fromClump) continue;
+            e.clumpName = toClump;
+            bone(e.targetName);
+        }
+    }
+}
+
+size_t XfbinImportInterface::KeepAnimsFor(size_t from, const std::string& clump) {
+    size_t out = from;
+    for (size_t i = from; i < anims_.size(); ++i) {
+        bool moves = false;
+        for (const xfbin::AnmEntry& e : anims_[i].entries) {
+            if (e.entryFormat == xfbin::kEntryBone && e.clumpName == clump) { moves = true; break; }
+        }
+        if (!moves) continue;
+        if (out != i) {
+            anims_[out] = std::move(anims_[i]);
+            if (i < animTags_.size()) animTags_[out] = std::move(animTags_[i]);
+        }
+        ++out;
+    }
+    const size_t kept = out - std::min(from, out);
+    anims_.resize(out);
+    animTags_.resize(out);
+    animsParsed_ = !anims_.empty();
+    return kept;
+}
+
+void XfbinImportInterface::TagAnims(size_t from, const std::string& tag) {
+    animTags_.resize(anims_.size());
+    for (size_t i = from; i < animTags_.size(); ++i) animTags_[i] = tag;
+}
+
+std::vector<XfbinImportInterface::MeshBone>
+XfbinImportInterface::MeshBones(const std::set<std::string>& clumps) const {
+    std::vector<MeshBone> out;
+    for (const SceneMesh& m : sceneMeshes_) {
+        if (m.handle == 0 || clumps.count(m.clumpName) == 0) continue;
+        MeshBone mb;
+        mb.mesh = m.handle;
+        mb.clump = m.clumpName;
+        for (size_t ci = 0; ci < sceneClumps_.size() && ci < boneHandles_.size(); ++ci) {
+            if (sceneClumps_[ci].name != m.clumpName || sceneInstance_[ci] != m.instance) continue;
+            const auto& nodes = sceneClumps_[ci].nodes;
+            for (size_t bi = 0; bi < nodes.size() && bi < boneHandles_[ci].size(); ++bi)
+                if (nodes[bi].name == m.boneName) { mb.bone = boneHandles_[ci][bi]; break; }
+            break;
+        }
+        out.push_back(mb);
+    }
+    return out;
+}
+
+int XfbinImportInterface::ClearAnimKeys() {
+    Interface* ip = GetCOREInterface();
+    if (ip == nullptr) return 0;
+    int cleared = 0;
+    auto clear = [&](ULONG h) {
+        INode* n = (h != 0) ? ip->GetINodeByHandle(h) : nullptr;
+        if (n == nullptr) return;
+        if (Control* tm = n->GetTMController()) {
+            for (Control* c : { tm->GetPositionController(), tm->GetRotationController(), tm->GetScaleController() }) {
+                if (c != nullptr && c->NumKeys() > 0) { c->DeleteKeys(TRACK_DOALL); ++cleared; }
+            }
+        }
+        if (Control* v = n->GetVisController()) {
+            if (v->NumKeys() > 0) { v->DeleteKeys(TRACK_DOALL); ++cleared; }
+        }
+    };
+    HoldSuspendGuard holdGuard;
+    for (const auto& handles : boneHandles_)
+        for (ULONG h : handles) clear(h);
+    for (const SceneMesh& m : sceneMeshes_) clear(m.handle);
+    return cleared;
+}
+
+std::vector<std::string> XfbinImportInterface::AnimClumpNames(size_t from) const {
+    std::vector<std::string> out;
+    for (size_t i = from; i < anims_.size(); ++i)
+        for (const xfbin::AnmClumpRef& c : anims_[i].clumps)
+            if (std::find(out.begin(), out.end(), c.clumpName) == out.end()) out.push_back(c.clumpName);
+    return out;
 }
 
 // ------------------------------------------------------------
@@ -1812,6 +1984,7 @@ int XfbinImportInterface::ParseAnimsAppend() {
 
     const size_t before = anims_.size();
     anims_.insert(anims_.end(), fresh.begin(), fresh.end());
+    animTags_.resize(anims_.size());
     animsParsed_ = true;
 
     size_t keys = 0;
@@ -2041,6 +2214,24 @@ int XfbinImportInterface::BuildAnimAt(int index, float startFrame,
         Control* rotCtrl = tmc->GetRotationController();
         Control* sclCtrl = tmc->GetScaleController();
 
+        // ------------------------------------------------------
+        //  WC3 "auf der Stelle"
+        //
+        //  Die Fortbewegung steckt in den beiden obersten Knochen:
+        //  "trall" (Tiefe 0, in den Daten unbewegt) und dem
+        //  Hueftknochen "<code>00t0" darunter. Ein Sprung hebt den
+        //  zweiten von 37 auf 84 cm - Z ist oben, X/Y ist der Weg.
+        //  Warcraft III bewegt Einheiten selbst; die Animation
+        //  darf sie nicht zusaetzlich verschieben. Also behalten
+        //  diese Knochen ihre waagerechte Ruhelage, die Hoehe
+        //  bleibt - ein Sprung bleibt ein Sprung.
+        // ------------------------------------------------------
+        const bool holdXY = inPlace_ &&
+                            (inPlaceClump_.empty() || sceneClumps_[clumpSlot].name == inPlaceClump_) &&
+                            sceneInstance_[clumpSlot] == 0 &&
+                            sceneClumps_[clumpSlot].Depth(static_cast<int>(boneSlot)) <= 1;
+        const xfbin::CoordNode& restNode = sceneClumps_[clumpSlot].nodes[boneSlot];
+
         for (const xfbin::AnmCurve& curve : entry.curves) {
             const xfbin::AnmBoneChannel ch =
                 xfbin::BoneChannelOf(curve.curveIndex, curve.curveFormat);
@@ -2057,6 +2248,10 @@ int XfbinImportInterface::BuildAnimAt(int index, float startFrame,
                     Point3 p(static_cast<float>(k.value[0]) * scale,
                              static_cast<float>(k.value[1]) * scale,
                              static_cast<float>(k.value[2]) * scale);
+                    if (holdXY) {
+                        p.x = restNode.position[0] * scale;
+                        p.y = restNode.position[1] * scale;
+                    }
                     posCtrl->SetValue(t, &p, TRUE, CTRL_ABSOLUTE);
                     ++keysSet;
                 } else if (ch == xfbin::kChannelScale && k.count >= 3 && sclCtrl &&
@@ -2409,6 +2604,18 @@ void AppendVisKey(IKeyControl* ik, TimeValue t, float value) {
 }
 
 } // namespace
+
+void XfbinImportInterface::SetStepVisibility(ULONG handle, const std::vector<std::pair<TimeValue, float>>& keys) {
+    Interface* ip = GetCOREInterface();
+    INode* node = (ip != nullptr && handle != 0) ? ip->GetINodeByHandle(handle) : nullptr;
+    if (node == nullptr) return;
+    HoldSuspendGuard holdGuard;
+    if (Control* vc = node->GetVisController()) vc->DeleteKeys(TRACK_DOALL);
+    IKeyControl* ik = GetVisKeys(node);
+    if (ik == nullptr) return;
+    for (const auto& k : keys) AppendVisKey(ik, k.first, k.second);
+    ik->SortKeys();
+}
 
 // ------------------------------------------------------------
 //  Sichtbarkeit aus der Deckkraft
@@ -3001,8 +3208,64 @@ void XfbinImportInterface::RunScriptText(const std::wstring& script) {
 }
 
 void XfbinImportInterface::RunMacro() {
-    RunScript(L"try (macros.run \"DH Tools\" \"XfbinImport_Open\") "
-              L"catch (format \"[XFBIN] Makro nicht gefunden.\\n\")");
+    xfi::OeffneFenster();
+}
+
+// ============================================================
+//  3.0: die C++-Fenster und dieselben Ablaeufe fuer Tests
+// ============================================================
+int XfbinImportInterface::ShowDialog() { return xfi::OeffneFenster(); }
+
+int XfbinImportInterface::ShowAnimDialog() { return xfi::OeffneAnimFenster(nullptr); }
+
+const MCHAR* XfbinImportInterface::ImportCharacter(const MCHAR* folder, const MCHAR* code, int costume, int flags) {
+    std::wstring ordner = SafeStr(folder);
+    if (ordner.empty()) ordner = xfi::StartOrdner();
+    const xfbin::Spieldaten* daten = nullptr;
+    const xfbin::Katalog* katalog = nullptr;
+    std::string fehler;
+    if (!xfi::Daten(ordner, daten, katalog, fehler)) {
+        scratch_ = L"ERROR: " + Utf8ToWide(fehler);
+        return scratch_.c_str();
+    }
+    const std::string c = WideToUtf8(SafeStr(code));
+    for (const xfbin::FigurEintrag& f : katalog->figuren) {
+        if (f.code != c || f.kostuem != std::max(1, costume)) continue;
+        xfi::ImportOptionen o;
+        o.texturen = (flags & 1) != 0;
+        o.reaktionen = (flags & 2) != 0;
+        o.leeren = (flags & 4) != 0;
+        o.wc3 = (flags & 8) != 0;
+        o.effekte = (flags & 16) == 0;
+        std::wstring bericht;
+        const bool ok = xfi::ImportiereFigur(*daten, f, o, bericht);
+        scratch_ = (ok ? L"" : L"ERROR: ") + bericht;
+        return scratch_.c_str();
+    }
+    scratch_ = L"ERROR: character not found: " + SafeStr(code);
+    return scratch_.c_str();
+}
+
+const MCHAR* XfbinImportInterface::ApplyAnimation(int index, int wc3) {
+    xfi::AnimOptionen o;
+    o.wc3 = wc3 != 0;
+    std::wstring bericht;
+    const bool ok = xfi::WendeAnimAn(index, o, bericht);
+    scratch_ = (ok ? L"" : L"ERROR: ") + bericht;
+    return scratch_.c_str();
+}
+
+const MCHAR* XfbinImportInterface::ApplySequence(int gap, int wc3) {
+    xfi::AnimOptionen o;
+    o.abstand = std::max(0, gap);
+    o.wc3 = wc3 != 0;
+    std::vector<int> alle(anims_.size());
+    for (size_t i = 0; i < alle.size(); ++i) alle[i] = static_cast<int>(i);
+    std::vector<xfi::Sequenz> plan;
+    std::wstring bericht;
+    const bool ok = xfi::WendeFolgeAn(alle, o, plan, bericht);
+    scratch_ = (ok ? L"" : L"ERROR: ") + bericht;
+    return scratch_.c_str();
 }
 
 const MCHAR* XfbinImportInterface::TakePendingFolder() {
@@ -3491,7 +3754,11 @@ int XfbinImportInterface::BuildMaterials(const MCHAR* directory) {
 
         Mtl* result = nullptr;
 
-        if (subs.size() == 1) {
+        if (ref.subIndex >= 0) {
+            // WC3-Modus: das Objekt traegt nur dieses eine Submesh -
+            // also genau sein Material, kein Multi/Sub.
+            if (static_cast<size_t>(ref.subIndex) < subs.size()) result = subs[static_cast<size_t>(ref.subIndex)];
+        } else if (subs.size() == 1) {
             result = subs[0];
         } else if (subs.size() > 1) {
             // Multi/Sub-Object. Die Material-ID der Faces ist der

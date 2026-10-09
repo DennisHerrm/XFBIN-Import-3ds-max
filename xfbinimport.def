@@ -5,3 +5,5 @@ EXPORTS
     LibClassDesc         @3
     LibVersion           @4
     CanAutoDefer         @5
+    LibInitialize        @6
+    LibShutdown          @7

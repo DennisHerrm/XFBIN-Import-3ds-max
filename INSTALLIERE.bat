@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================
-REM  XFBIN Import 2.1.6 - Paket erstellen + installieren
+REM  XFBIN Import 3.0.0 - Paket erstellen + installieren
 REM
 REM  1. Baut die Paketstruktur aus output\ und scripts\
 REM  2. Kopiert das fertige Paket nach ApplicationPlugins
@@ -138,10 +138,11 @@ echo Kopiere Skripte in das Paket...
 
 mkdir "%PKG%\Contents\MacroScripts"          >nul 2>&1
 mkdir "%PKG%\Contents\Post-Start-Up_Scripts" >nul 2>&1
+mkdir "%PKG%\Contents\Pre-Start-Up_Scripts"  >nul 2>&1
 
 copy /Y "%SCRIPTS%\XfbinImport.mcr"          "%PKG%\Contents\MacroScripts\"          >nul
 copy /Y "%SCRIPTS%\XfbinMenu_2016_2024.ms"   "%PKG%\Contents\Post-Start-Up_Scripts\" >nul
-copy /Y "%SCRIPTS%\XfbinMenu_2025_2027.ms"   "%PKG%\Contents\Post-Start-Up_Scripts\" >nul
+copy /Y "%SCRIPTS%\XfbinMenu_2025_2027.ms"   "%PKG%\Contents\Pre-Start-Up_Scripts\"  >nul
 copy /Y "%SCRIPTS%\XFBIN_Import.ms"          "%PKG%\Contents\MacroScripts\"          >nul
 
 if not exist "%PKG%\Contents\MacroScripts\XfbinImport.mcr" (
@@ -178,7 +179,7 @@ REM ---- xcopy meldet nicht jeden Teilausfall als Fehler.  ----
 set "MISSING="
 if not exist "%DEST%\PackageContents.xml"                          set "MISSING=PackageContents.xml"
 if not exist "%DEST%\Contents\MacroScripts\XfbinImport.mcr"        set "MISSING=XfbinImport.mcr"
-if not exist "%DEST%\Contents\Post-Start-Up_Scripts\XfbinMenu_2025_2027.ms" set "MISSING=XfbinMenu_2025_2027.ms"
+if not exist "%DEST%\Contents\Pre-Start-Up_Scripts\XfbinMenu_2025_2027.ms" set "MISSING=XfbinMenu_2025_2027.ms"
 
 if defined MISSING (
     echo FEHLER: Im Zielordner fehlt: !MISSING!
@@ -192,7 +193,7 @@ if !COPYFAIL! GTR 0 (
     echo  UNVOLLSTAENDIG installiert.
     echo ========================================
     echo.
-    echo  !COPYFAIL! Plugin-Datei(en) liessen sich nicht ersetzen.
+    echo  !COPYFAIL! Plugin-Datei^(en^) liessen sich nicht ersetzen.
     echo  Die Skripte wurden aber aktualisiert - damit passen
     echo  Skript und Plugin nicht mehr zusammen.
     echo.

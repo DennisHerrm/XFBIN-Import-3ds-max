@@ -70,6 +70,10 @@ set(XFBIN_PARSER_SOURCES
     src/xfbin_anm.cpp
     src/xfbin_tex.h
     src/xfbin_tex.cpp
+    src/xfbin_cpk.h
+    src/xfbin_cpk.cpp
+    src/xfbin_spiel.h
+    src/xfbin_spiel.cpp
 )
 
 # Die Oberflaeche als Ressource. Das Skript wandert damit in die
@@ -97,6 +101,12 @@ if(XFBIN_BUILD_PLUGIN)
         src/xfbinimport.h
         src/xfbinimport.cpp
         src/xfbinimport_dll.cpp
+        src/xfbinimport_res.h
+        src/xfbin_app.h
+        src/xfbin_ui.h
+        src/xfbin_ablauf.cpp
+        src/xfbin_fenster.cpp
+        src/xfbin_animfenster.cpp
         ${XFBIN_RESOURCES}
         xfbinimport.def
     )
@@ -132,6 +142,8 @@ if(XFBIN_BUILD_PLUGIN)
         MNMath.lib
         Paramblk2.lib
         comctl32.lib
+        dwmapi.lib
+        uxtheme.lib
     )
 
     target_compile_definitions(XfbinImport PRIVATE

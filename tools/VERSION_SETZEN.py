@@ -88,9 +88,6 @@ def main():
         'XfbinImport.mcr (Kopfzeile)':
             re.search(r'Version ([\d.]+)',
                       read('scripts/XfbinImport.mcr')).group(1),
-        'XfbinImport.mcr (erwartet)':
-            re.search(r'sExpectedPlugin = "([\d.]+)"',
-                      read('scripts/XfbinImport.mcr')).group(1),
     }
 
     bad = {k: v for k, v in found.items() if v != new}

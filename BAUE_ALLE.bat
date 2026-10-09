@@ -4,7 +4,7 @@ cd /d "%~dp0"
 
 echo.
 echo ========================================
-echo  XFBIN Import 2.1.6 - Max 2016 bis 2027
+echo  XFBIN Import 3.0.0 - Max 2016 bis 2027
 echo ========================================
 echo.
 
