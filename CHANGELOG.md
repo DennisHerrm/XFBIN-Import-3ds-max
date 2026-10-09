@@ -9,6 +9,10 @@ Spielen - kein Auspacken, kein Ordnerwaehlen mehr.
 - Storm 3 Full Burst, Storm 4 und Storm Connections werden ueber die
   Steam-Bibliotheken gefunden (`libraryfolders.vdf`); jeder andere
   Ordner geht ueber "Browse", auch einer mit ausgepackten `.xfbin`.
+  Dazu Storm 1 und Storm 2 - erkannt an der Exe (`NSUNS1.exe`,
+  `NSUNS2.exe`), denn Steam legt sie je nach Region unter `QWANT` und
+  `Qwant2` ab. Alle 2.516 bzw. 3.663 Dateien lesbar, Partikel ohne
+  Warnung. Storm Revolution wird erkannt, ist aber ungetestet.
 - Neuer CPK-Leser (`xfbin_cpk`): Inhaltsverzeichnis, CRILAYLA,
   verschachtelte CPKs mit ITOC (Storm 3) und die Verschluesselung der
   Dateien in Storm 4 und Connections (xorshift128-Schluesselstrom).
@@ -85,6 +89,18 @@ Spielen - kein Auspacken, kein Ordnerwaehlen mehr.
   sie brauchen. Exemplare, die eine Animation nicht nennt, sind aus.
   In Narutos Ultimate sind gleichzeitig 17-66 statt rund 195 der 268
   Effektmodelle zu sehen.
+- Weitere Koerper der Figur sind eigene Modelle, kein "anderes Kostuem":
+  nennt eine Animation `1nrtbod1` UND `1nrtbod2`, wird `bod2` nicht mehr
+  auf Naruto umgeleitet (daraus wurde eine zweite Naruto-Kopie, die in
+  `1nrtskl2_atk` die ganze Animation dastand). Fehlt die gleichnamige
+  Datei, wird der Koerper in den uebrigen Dateien der Figur gesucht -
+  Storm 3 hat den zweiten Schattendoppelgaenger `2nrtbod3` in
+  `2nrtacc2.xfbin`.
+- Kostuem-Umleitung nur noch fuer echte Kostueme (eigene Modelldatei),
+  und mit Knochen: Animationen des ersten Kostuems sprechen `2tyo00t0`
+  an, Chojis zweites Kostuem heisst `2tyo01t0` - 32 Erwachen-Animationen
+  setzten dort bisher keinen einzigen Key. Narutos Klon-Animationen in
+  Storm 1 (`1bun...`, Skelett `1nrt01t0`) landen nicht mehr auf Naruto.
 
 ### WC3-Modus
 Nach den WhiteoutDex-Handouts fuer Importer:

@@ -285,7 +285,24 @@ bool IstSpielOrdner(const std::wstring& ordner) {
     return gefunden;
 }
 
+// Die Exe verraet das Spiel zuverlaessiger als der Ordner: Steam
+// legt Storm 1 und 2 je nach Region unter "QWANT" und "Qwant2" ab.
+static std::wstring SpielNachExe(const std::wstring& ordner) {
+    static const struct { const wchar_t* exe; const wchar_t* name; } kExe[] = {
+        { L"NSUNSC.exe", L"Storm Connections" }, { L"NSUNS4.exe", L"Storm 4" },
+        { L"NS3FB.exe", L"Storm 3 Full Burst" }, { L"NSUNS3.exe", L"Storm 3 Full Burst" },
+        { L"NSUNSR.exe", L"Storm Revolution" },  { L"NSUNS2.exe", L"Storm 2" },
+        { L"NSUNS1.exe", L"Storm 1" },
+    };
+    std::error_code ec;
+    for (const auto& e : kExe)
+        if (fs::exists(fs::path(ordner) / e.exe, ec)) return e.name;
+    return std::wstring();
+}
+
 std::wstring SpielName(const std::wstring& ordner) {
+    const std::wstring nachExe = SpielNachExe(ordner);
+    if (!nachExe.empty()) return nachExe;
     std::wstring n = fs::path(ordner).filename().wstring();
     const std::wstring k = KleinW(n);
     if (k.find(L"connections") != std::wstring::npos) return L"Storm Connections";
@@ -294,6 +311,8 @@ std::wstring SpielName(const std::wstring& ordner) {
     if (k.find(L"revolution") != std::wstring::npos) return L"Storm Revolution";
     if (k.find(L"storm 2") != std::wstring::npos) return L"Storm 2";
     if (k.find(L"trilogy") != std::wstring::npos) return L"Storm Trilogy";
+    // Storm 1 heisst auf Steam schlicht "NARUTO: Ultimate Ninja STORM"
+    if (k.size() >= 11 && k.compare(k.size() - 11, 11, L"ninja storm") == 0) return L"Storm 1";
     return n;
 }
 
@@ -304,7 +323,7 @@ std::vector<SpielOrt> FindeSpiele() {
         for (fs::directory_iterator it(bib + L"\\steamapps\\common", ec), ende; !ec && it != ende; it.increment(ec)) {
             if (!it->is_directory(ec)) continue;
             const std::wstring k = KleinW(it->path().filename().wstring());
-            if (k.find(L"ninja storm") == std::wstring::npos) continue;
+            if (k.find(L"ninja storm") == std::wstring::npos && SpielNachExe(it->path().wstring()).empty()) continue;
             if (!IstSpielOrdner(it->path().wstring())) continue;
             aus.push_back({ SpielName(it->path().wstring()), it->path().wstring() });
         }
@@ -315,7 +334,10 @@ std::vector<SpielOrt> FindeSpiele() {
         if (k.find(L"connections") != std::wstring::npos) return 0;
         if (k.find(L"storm 4") != std::wstring::npos) return 1;
         if (k.find(L"storm 3") != std::wstring::npos) return 2;
-        return 3;
+        if (k.find(L"revolution") != std::wstring::npos) return 3;
+        if (k.find(L"storm 2") != std::wstring::npos) return 4;
+        if (k.find(L"storm 1") != std::wstring::npos) return 6;
+        return 5;
     };
     std::stable_sort(aus.begin(), aus.end(), [&](const SpielOrt& a, const SpielOrt& b) { return platz(a) < platz(b); });
     return aus;

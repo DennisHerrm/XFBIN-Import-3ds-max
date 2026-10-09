@@ -497,8 +497,13 @@ public:
     // Clump-Namen fromClump -> toClump, Bone-Namen mit dem Anfang
     // fromPrefix -> toPrefix. Fuer die geteilten Reaktionen
     // ("1cmnbod1" -> "1nrtbod1", "1cmn00t0 pelvis" -> "1nrt00t0 pelvis").
+    // onlyIfAbsent: nur Animationen, die toClump nicht selbst nennen -
+    // sonst ist fromClump ein eigenes Modell, kein anderer Name.
+    // bonePrefix: nur, wenn ein Knochen der Referenz so beginnt
+    // ("1nrt00" - das Skelett der Figur, nicht "1nrt01" des Klons).
     void RetargetAnims(size_t from, const std::string& fromClump, const std::string& toClump,
-                       const std::string& fromPrefix, const std::string& toPrefix);
+                       const std::string& fromPrefix, const std::string& toPrefix,
+                       bool onlyIfAbsent = false, const std::string& bonePrefix = std::string());
 
     // Animationen ab 'from' verwerfen, die keinen Bone von 'clump'
     // bewegen - etwa die Opferanimation in einer Jutsu-Datei, die

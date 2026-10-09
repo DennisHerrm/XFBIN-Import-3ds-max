@@ -11,9 +11,12 @@ A native 3ds Max plugin that imports characters from the
 game** — models, skeletons, skinning, textures, the character's own
 animations and its effects. No unpacking, no folder hunting.
 
-Supported: **Storm 3 Full Burst, Storm 4 and Storm Connections**
-(found automatically in every Steam library), or any folder with
-unpacked CyberConnect2 **XFBIN** files.
+Supported: **Storm 1, Storm 2, Storm 3 Full Burst, Storm 4 and Storm
+Connections** (found automatically in every Steam library, also when
+Steam names the folder differently, e.g. `QWANT` / `Qwant2` - the game
+is recognised by its executable), or any folder with unpacked
+CyberConnect2 **XFBIN** files. Storm Revolution is detected as well,
+but untested.
 
 A **WC3 mode** prepares everything for the
 [WhiteoutDex](https://github.com/FernandoS27/WhiteoutDex) Warcraft III exporter; without it,

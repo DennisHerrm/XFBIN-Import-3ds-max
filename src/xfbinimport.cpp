@@ -1884,13 +1884,25 @@ int XfbinImportInterface::ClearAnims() {
 void XfbinImportInterface::RetargetAnims(size_t from, const std::string& fromClump,
                                          const std::string& toClump,
                                          const std::string& fromPrefix,
-                                         const std::string& toPrefix) {
+                                         const std::string& toPrefix,
+                                         bool onlyIfAbsent,
+                                         const std::string& bonePrefix) {
     auto bone = [&](std::string& n) {
         if (!fromPrefix.empty() && n.compare(0, fromPrefix.size(), fromPrefix) == 0)
             n = toPrefix + n.substr(fromPrefix.size());
     };
     for (size_t i = from; i < anims_.size(); ++i) {
         xfbin::Anm& a = anims_[i];
+        if (onlyIfAbsent && std::any_of(a.clumps.begin(), a.clumps.end(),
+                                        [&](const xfbin::AnmClumpRef& c) { return c.clumpName == toClump; }))
+            continue;
+        if (!bonePrefix.empty() &&
+            !std::any_of(a.clumps.begin(), a.clumps.end(), [&](const xfbin::AnmClumpRef& c) {
+                return c.clumpName == fromClump &&
+                       std::any_of(c.boneNames.begin(), c.boneNames.end(),
+                                   [&](const std::string& b) { return b.compare(0, bonePrefix.size(), bonePrefix) == 0; });
+            }))
+            continue;
         for (xfbin::AnmClumpRef& c : a.clumps) {
             if (c.clumpName != fromClump) continue;
             c.clumpName = toClump;

@@ -286,19 +286,56 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
     std::wstring fehler;
     size_t dateien = 0;
 
+    // Knochen-Praefix des eigenen Skeletts: "2tyo00" fuer Chojis
+    // erstes Kostuem, "2tyo01" fuer das zweite. Animationen eines
+    // anderen Kostuems sprechen ihr eigenes an.
+    std::string zielPraefix;
+    {
+        std::vector<uint8_t> b;
+        std::string fe, w;
+        xfbin::XfbinFile datei;
+        std::vector<xfbin::Clump> cl;
+        if (d.Lies(f.modell, b, fe) && xfbin::ReadXfbinBuffer(b.data(), b.size(), datei).ok) xfbin::ParseClumps(datei, cl, fe, w);
+        for (const xfbin::Clump& c : cl) {
+            if (c.name != clump) continue;
+            for (const xfbin::CoordNode& n : c.nodes)
+                if (n.name.size() >= f.code.size() + 2 && n.name.compare(0, f.code.size(), f.code) == 0) { zielPraefix = n.name.substr(0, f.code.size() + 2); break; }
+        }
+    }
+    auto praefixVon = [&](const xfbin::AnmClumpRef& r) {
+        for (const std::string& b : r.boneNames)
+            if (b.size() >= f.code.size() + 2 && b.compare(0, f.code.size(), f.code) == 0) return b.substr(0, f.code.size() + 2);
+        return std::string();
+    };
+
     // --- 1. Animationen: nur die eigenen ---------------------
     for (const std::string& pfad : f.anims) {
         if (!Oeffne(x, d, pfad, fehler)) { Log("  %s: %s", pfad.c_str(), Utf8(fehler).c_str()); continue; }
         const size_t von = x.Anims().size();
         if (x.ParseAnimsAppend() < 0 && x.Anims().size() == von) continue;
-        // Ein anderes Kostuem spricht dasselbe Skelett unter
-        // seinem eigenen Namen an ("1nrtbod1" fuer bod2).
+        // Ein anderes Kostuem spricht dieselbe Figur unter seinem
+        // eigenen Namen an ("2tyobod1" fuer Chojis bod2) - samt
+        // seinem Knochen-Praefix ("2tyo00t0" statt "2tyo01t0").
+        // Umgeleitet wird nur, wenn
+        //   * es ein echtes Kostuem ist, mit eigener Modelldatei -
+        //     Narutos 1nrtbod2 ist ein Doppelgaenger ohne Datei, und
+        //     umgeleitet wurde er zu einer zweiten Naruto-Kopie;
+        //   * die Animation die Figur nicht selbst nennt ("1nrtskl2_atk"
+        //     nennt 1nrtbod1 UND 1nrtbod2).
         for (const std::string& c : x.AnimClumpNames(von)) {
             const std::string kopf = f.code + "bod";
             if (c == clump || c.size() <= kopf.size() || c.compare(0, kopf.size(), kopf) != 0) continue;
             if (!std::all_of(c.begin() + static_cast<std::ptrdiff_t>(kopf.size()), c.end(),
                              [](char ch) { return ch >= '0' && ch <= '9'; })) continue;
-            x.RetargetAnims(von, c, clump, std::string(), std::string());
+            if (!d.Gibt("data/spc/" + c + ".xfbin")) continue;
+            std::set<std::string> quellen;
+            for (size_t i = von; i < x.Anims().size(); ++i)
+                for (const xfbin::AnmClumpRef& r : x.Anims()[i].clumps)
+                    if (r.clumpName == c) quellen.insert(praefixVon(r));
+            for (const std::string& q : quellen) {
+                const bool gleich = q.empty() || zielPraefix.empty() || q == zielPraefix;
+                x.RetargetAnims(von, c, clump, gleich ? std::string() : q, gleich ? std::string() : zielPraefix, true, q);
+            }
         }
         const size_t behalten = x.KeepAnimsFor(von, clump);
         x.TagAnims(von, xfbin::AnimGruppe(f, pfad));
@@ -331,20 +368,64 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
     // Narutos Erwachen (1nrtawa) zeigt den Neunschwaenzigen-Mantel
     // 1nrvbod1. Das gemeinsame Gegnermodell 1cmnbod1 ist keine.
     std::vector<std::string> modelle = { f.modell };
+    std::map<std::string, std::vector<std::string>> nurClumps;   // Datei -> nur diese Clumps bauen
     std::vector<std::string> formen;              // Codes der Verwandlungen ("1nrv")
+    std::vector<std::string> fehlend;             // eigene Koerper ohne gleichnamige Datei
     g_figurClumps = { clump };
-    for (const std::string& c : x.AnimClumpNames(0)) {
+    const std::vector<std::string> animClumps = x.AnimClumpNames(0);
+    for (const std::string& c : animClumps) {
         if (c == clump) continue;
         const bool eigen = c.compare(0, f.code.size(), f.code) == 0;
         const bool form = !eigen && IstKoerper(c);
         if (!eigen && !form) continue;
         const std::string p = "data/spc/" + c + ".xfbin";
-        if (!d.Gibt(p) || std::find(modelle.begin(), modelle.end(), p) != modelle.end()) continue;
+        if (!d.Gibt(p)) {
+            if (eigen && IstKoerper(c)) fehlend.push_back(c);
+            continue;
+        }
+        if (std::find(modelle.begin(), modelle.end(), p) != modelle.end()) continue;
         modelle.push_back(p);
         if (form) {
             formen.push_back(c.substr(0, 4));
             g_figurClumps.push_back(c);
             Log("  Verwandlung: %s", c.c_str());
+        }
+    }
+    // Weitere Koerper der Figur stehen oft in einer Sammeldatei: die
+    // Doppelgaenger in Storm 3 als 2nrtbod2 in 2nrtbod1.xfbin (das
+    // laedt ohnehin mit) und 2nrtbod3 in 2nrtacc2.xfbin. Bis 3.0 wurden
+    // sie als "anderes Kostuem" auf die Figur umgeleitet - und standen
+    // als ganze Narutos neben ihm.
+    if (!fehlend.empty()) {
+        std::set<std::string> offen(fehlend.begin(), fehlend.end());
+        // schon geladene Dateien bringen ihre Clumps mit
+        for (const std::string& m : modelle) {
+            std::vector<uint8_t> b;
+            std::string fe;
+            xfbin::XfbinFile kopf;
+            if (!d.Lies(m, b, fe) || !xfbin::ReadXfbinBuffer(b.data(), b.size(), kopf).ok) continue;
+            for (const xfbin::XfbinPage& pg : kopf.pages)
+                for (const xfbin::XfbinChunk& ch : pg.chunks)
+                    if (ch.type != nullptr && ch.name != nullptr && *ch.type == "nuccChunkClump") offen.erase(*ch.name);
+        }
+        for (const std::string& p : d.Pfade()) {
+            if (offen.empty()) break;
+            const std::string n = xfbin::DateiName(p);
+            if (p.compare(0, 9, "data/spc/") != 0 || p.find('/', 9) != std::string::npos) continue;
+            if (n.compare(0, f.code.size(), f.code) != 0 || n.find(".bin") != std::string::npos) continue;
+            if (std::find(modelle.begin(), modelle.end(), p) != modelle.end()) continue;
+            std::vector<uint8_t> b;
+            std::string fe;
+            xfbin::XfbinFile kopf;
+            if (!d.Lies(p, b, fe) || !xfbin::ReadXfbinBuffer(b.data(), b.size(), kopf).ok) continue;
+            std::vector<std::string> treffer;
+            for (const xfbin::XfbinPage& pg : kopf.pages)
+                for (const xfbin::XfbinChunk& ch : pg.chunks)
+                    if (ch.type != nullptr && ch.name != nullptr && *ch.type == "nuccChunkClump" && offen.count(*ch.name)) treffer.push_back(*ch.name);
+            if (treffer.empty()) continue;
+            for (const std::string& t : treffer) { offen.erase(t); Log("  Koerper %s aus %s", t.c_str(), p.c_str()); }
+            modelle.push_back(p);
+            nurClumps[p] = treffer;
         }
     }
 
@@ -361,8 +442,11 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
             if (m == f.modell) { bericht = L"model could not be read: " + fehler; return false; }
             continue;
         }
+        const auto nur = nurClumps.find(m);
+        if (nur != nurClumps.end()) x.SetClumpFilter(nur->second);
         const int b = x.BuildSkeletonN(o.knochenModus, o.massstab, 0);
         const int n = x.BuildMeshesN(o.lodWeg ? 1 : 0, o.normalen ? 1 : 0, o.skin ? 1 : 0, o.massstab, 0);
+        if (nur != nurClumps.end()) x.SetClumpFilter({});
         if (m == f.modell && b <= 0) { bericht = L"skeleton could not be built: " + std::wstring(x.GetLastError()); return false; }
         knochen += std::max(0, b);
         objekte += std::max(0, n);
@@ -389,6 +473,7 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
         for (const std::string& c : x.AnimClumpNames(0)) gesucht.insert(c);
         for (const std::string& c : { clump }) gesucht.erase(c);
         for (const std::string& m : modelle) gesucht.erase(OhneEndung(xfbin::DateiName(m)));
+        for (const auto& kv : nurClumps) for (const std::string& c : kv.second) gesucht.erase(c);
 
         const std::string kurz = f.code.substr(1);   // "nrt"
         std::vector<std::string> kandidaten = ev.dateien;
