@@ -391,19 +391,17 @@ Three scripts help check the result inside Max:
 
 ## Known limitations
 
-- **Effect spawn timing** comes from the particle chunks. Effects an
-  animation moves *itself* (the boards and lines of an ultimate
-  cutscene) are shown for the whole clip unless their opacity or scale
-  hides them — the game also hides some by moving the sprite off its
-  texture, which is not detected yet.
+- **Effect spawn timing** comes from the particle chunks. Visibility
+  follows the game data: opacity along the bone chain and through the
+  animation's own parent table (guide dummies such as `1efc_dmy01`),
+  and the model list of every clump reference. Material-only tricks
+  (UV scrolling, glare) are not turned into visibility.
 - Particle 2 values are mapped from the game data, partly by best
   guess (speed, gravity, size). Forces such as vortex and wind are not
-  applied. About 100 particle chunks of Storm Connections use a newer
-  layout and are skipped.
+  applied.
 - A started effect animation is played once per use, not once per
-  particle — an emitter that starts twenty copies shows one.
-- During a transformation the normal body stays visible unless the
-  data hides it.
+  particle — an emitter that starts twenty copies shows one. While it
+  runs, all of its models are shown.
 - Shader-only material values — glare, falloff, blend rate, outline ID
   — have no 3ds Max equivalent.
 - Of the seven NUT pixel formats, two are verified against real data

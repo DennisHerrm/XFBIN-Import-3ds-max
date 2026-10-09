@@ -58,13 +58,18 @@ bool ParseParticles(const XfbinFile& file, std::vector<ParticleSystem>& out, std
                 start[k] = o;
                 o += bytes[k];
             }
-            // Die Zeitleisten haben keine feste Groesse; der Rest der
-            // Chunk-Laenge muss genau aufgehen.
-            if (o != b.size()) {
-                warn << "nuccChunkParticle '" << (c.name ? *c.name : "") << "': Abschnitte passen nicht zur Laenge ("
+            // Die Abschnitte muessen in den Chunk passen. Dahinter darf
+            // mehr stehen: Storm Connections (Version 123) haengt einen
+            // grossen Zusatzblock an, vermutlich animierte Emitterwerte -
+            // er wird nicht gelesen.
+            if (o > b.size()) {
+                warn << "nuccChunkParticle '" << (c.name ? *c.name : "") << "': Abschnitte laenger als der Chunk ("
                      << o << " / " << b.size() << ") - uebersprungen\n";
                 continue;
             }
+            // Zeitleisten-Eintraege: ab Version 123 auf 8 Bytes
+            // ausgerichtet, davor auf 4.
+            const size_t ausrichtung = c.version >= 123 ? 8 : 4;
             auto groesse = [&](int k) -> size_t { return count[k] ? bytes[k] / count[k] : 0; };
 
             ParticleSystem sys;
@@ -141,6 +146,14 @@ bool ParseParticles(const XfbinFile& file, std::vector<ParticleSystem>& out, std
                 t += 4;
                 std::vector<std::pair<bool, int>> tl;
                 for (uint32_t k = 0; k < n && t + 4 <= b.size(); ++k, t += 4) tl.emplace_back(U16(b, t) != 0, U16(b, t + 2));
+                const size_t laenge = 4 + static_cast<size_t>(n) * 4;
+                if (laenge % ausrichtung) t += ausrichtung - laenge % ausrichtung;
+                // Ab Version 123 bedeutet das Kennbit etwas anderes - es
+                // kommen Folgen wie "aus 566, aus 1533" vor. Abwechselnd
+                // als Start und Stopp gelesen passen sie: zwei Emitter
+                // derselben Effekt-Animation laufen dann beide 566-1533.
+                if (c.version >= 123)
+                    for (size_t k = 0; k < tl.size(); ++k) tl[k].first = (k % 2) == 0;
                 if (i < sys.emitters.size()) sys.emitters[i].timeline = std::move(tl);
             }
             out.push_back(std::move(sys));

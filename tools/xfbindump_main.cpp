@@ -168,7 +168,7 @@ int SpielBefehl(int argc, char** argv) {
             std::vector<xfbin::ParticleSystem> ps;
             std::string w;
             xfbin::ParseParticles(x, ps, w);
-            if (!w.empty()) { ++warn; std::cout << w; }
+            if (!w.empty()) { ++warn; std::cout << p << ":\n" << w; }
             for (const xfbin::ParticleSystem& s : ps) {
                 ++systeme;
                 for (const xfbin::ParticleEmitter& e : s.emitters) {

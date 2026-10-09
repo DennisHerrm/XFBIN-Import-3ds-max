@@ -19,6 +19,7 @@
 #include <imtl.h>
 #include <modstack.h>
 #include <control.h>
+#include <decomp.h>
 
 // ------------------------------------------------------------
 //  Class-IDs der beiden Knotentypen.
@@ -1790,6 +1791,7 @@ int XfbinImportInterface::BuildMeshesN(int skipLod, int explicitNormals,
               sm.instance  = copy;
               if (clump != nullptr) sm.clumpName = clump->name;
               if (meshBone != nullptr) sm.boneName = meshBone->name;
+              sm.modelName = model.name;
               sceneMeshes_.push_back(sm);
           }
 
@@ -1892,6 +1894,7 @@ void XfbinImportInterface::RetargetAnims(size_t from, const std::string& fromClu
         for (xfbin::AnmClumpRef& c : a.clumps) {
             if (c.clumpName != fromClump) continue;
             c.clumpName = toClump;
+            c.modelsKnown = false;
             for (std::string& b : c.boneNames) bone(b);
         }
         for (xfbin::AnmEntry& e : a.entries) {
@@ -2416,10 +2419,15 @@ int XfbinImportInterface::BuildAnimAt(int index, float startFrame,
         }
     }
 
+    const int gebacken = BakeCoordParents(anm, startFrame, channelMask, scale);
+
     AnimateOff();
     ResumeAnimate();
 
     msKeys_ = sw.ms();
+    if (gebacken > 0)
+        Log((Msg() << L"buildAnim '" << Cp932ToWide(anm.name) << L"': " << gebacken
+                   << L" Effekt-Wurzeln mit Elternkette aus der Animation").str());
 
     // Zeitleiste mitwachsen lassen statt sie zu ersetzen - im
     // Sequenzmodus kommt eine Animation nach der anderen dazu.
@@ -2517,6 +2525,212 @@ bool XfbinImportInterface::ResolveEntryTarget(const xfbin::Anm& anm,
     }
 
     return (boneSlot != SIZE_MAX);
+}
+
+size_t XfbinImportInterface::SceneSlotOfRef(const xfbin::Anm& anm, int ci) const {
+    if (ci < 0 || static_cast<size_t>(ci) >= anm.clumps.size()) return SIZE_MAX;
+    const xfbin::RawString& name = anm.clumps[static_cast<size_t>(ci)].clumpName;
+    int inst = 0;
+    for (int k = 0; k < ci; ++k)
+        if (anm.clumps[static_cast<size_t>(k)].clumpName == name) ++inst;
+    for (size_t s = 0; s < sceneClumps_.size(); ++s)
+        if (sceneClumps_[s].name == name && sceneInstance_[s] == inst) return s;
+    return SIZE_MAX;
+}
+
+// ------------------------------------------------------------
+//  Eltern ueber Clump-Grenzen
+//
+//  Die Animation bringt eine eigene Elterntabelle mit (Paare
+//  "Clump.Coord -> Clump.Coord"). Innerhalb eines Clumps
+//  wiederholt sie nur das Skelett. Interessant sind die Paare
+//  ueber Clump-Grenzen: in Narutos Ultimate haengen 34
+//  Effekt-Clumps an 36 Exemplaren von "1efc_dmy01" - einem
+//  leeren Ein-Knochen-Clump, den das Spiel als Fuehrungspunkt
+//  bewegt, skaliert und ueber seine Deckkraft ein- und
+//  ausblendet. Die Effekte selbst tragen nur ihre Lage relativ
+//  zum Dummy.
+//
+//  Die Dummys stehen nicht in der Szene, und Eltern in Max sind
+//  fest, waehrend sie hier je Animation wechseln. Also wird die
+//  Kette Bild fuer Bild ausgewertet und das Ergebnis in die
+//  Effekt-Wurzel geschrieben. Die Deckkraft der Kette nimmt
+//  BuildVisibility mit.
+// ------------------------------------------------------------
+namespace {
+
+using CoordKey = std::pair<int, int>;   // Clump-Referenz, Coord
+
+// Wert einer Kurve bei Frame f, linear zwischen den Keys.
+// Quaternionen normiert und auf derselben Halbkugel gemischt.
+void CurveAt(const xfbin::AnmCurve& c, double f, bool quat, double out[4]) {
+    const std::vector<xfbin::AnmKey>& ks = c.keys;
+    size_t i = 0;
+    while (i + 1 < ks.size() && ks[i + 1].frame <= f) ++i;
+    const xfbin::AnmKey& a = ks[i];
+    for (int k = 0; k < 4; ++k) out[k] = a.value[k];
+    if (i + 1 >= ks.size() || f <= a.frame) return;
+    const xfbin::AnmKey& b = ks[i + 1];
+    const double u = (f - a.frame) / std::max(1e-6, b.frame - a.frame);
+    double sgn = 1.0;
+    if (quat && a.value[0] * b.value[0] + a.value[1] * b.value[1] + a.value[2] * b.value[2] + a.value[3] * b.value[3] < 0.0) sgn = -1.0;
+    for (int k = 0; k < 4; ++k) out[k] = a.value[k] + (sgn * b.value[k] - a.value[k]) * u;
+    if (quat) {
+        const double l = std::sqrt(out[0] * out[0] + out[1] * out[1] + out[2] * out[2] + out[3] * out[3]);
+        if (l > 1e-9) for (int k = 0; k < 4; ++k) out[k] /= l;
+    }
+}
+
+} // namespace
+
+int XfbinImportInterface::BakeCoordParents(const xfbin::Anm& anm, float startFrame, int channelMask, float scale) {
+    Interface* ip = GetCOREInterface();
+    if (ip == nullptr || anm.coordParents.empty()) return 0;
+
+    std::map<CoordKey, CoordKey> elter;
+    for (const xfbin::AnmCoordParent& cp : anm.coordParents)
+        elter[{ cp.childClump, cp.childCoord }] = { cp.parentClump, cp.parentCoord };
+    std::map<CoordKey, const xfbin::AnmEntry*> eintrag;
+    for (const xfbin::AnmEntry& e : anm.entries)
+        if (e.entryFormat == xfbin::kEntryBone) eintrag[{ e.clumpIndex, e.boneIndex }] = &e;
+
+    // Ruhelage eines Coords, falls die Animation ihn nicht bewegt:
+    // aus einem Clump gleichen Namens in der Szene, sonst neutral.
+    auto ruhe = [&](const CoordKey& k) -> const xfbin::CoordNode* {
+        if (k.first < 0 || static_cast<size_t>(k.first) >= anm.clumps.size()) return nullptr;
+        const xfbin::AnmClumpRef& cr = anm.clumps[static_cast<size_t>(k.first)];
+        if (k.second < 0 || static_cast<size_t>(k.second) >= cr.boneNames.size()) return nullptr;
+        for (const xfbin::Clump& c : sceneClumps_) {
+            if (c.name != cr.clumpName) continue;
+            for (const xfbin::CoordNode& n : c.nodes)
+                if (n.name == cr.boneNames[static_cast<size_t>(k.second)]) return &n;
+        }
+        return nullptr;
+    };
+    auto rotation = [&](const xfbin::Mat43& r) {
+        Matrix3 m3(1);
+        for (int row = 0; row < 3; ++row)
+            m3.SetRow(row, Point3(static_cast<float>(r.m[row][0]), static_cast<float>(r.m[row][1]), static_cast<float>(r.m[row][2])));
+        Quat q(m3);
+        if (quatMode_ != 0) q = Conjugate(q);
+        return q;
+    };
+    // Lokale Matrix eines Coords bei Frame f, so wie Max sie aus
+    // Position, Rotation und Skalierung zusammensetzt.
+    auto lokal = [&](const CoordKey& k, double f) {
+        Point3 p(0, 0, 0), s(1, 1, 1);
+        Quat q(0.0f, 0.0f, 0.0f, 1.0f);
+        if (const xfbin::CoordNode* n = ruhe(k)) {
+            p = Point3(n->position[0], n->position[1], n->position[2]);
+            s = Point3(n->scale[0], n->scale[1], n->scale[2]);
+            q = rotation(xfbin::MakeRotation(n->rotation[0], n->rotation[1], n->rotation[2]));
+        }
+        const auto it = eintrag.find(k);
+        if (it != eintrag.end()) {
+            for (const xfbin::AnmCurve& c : it->second->curves) {
+                if (c.keys.empty()) continue;
+                const xfbin::AnmBoneChannel ch = xfbin::BoneChannelOf(c.curveIndex, c.curveFormat);
+                double v[4];
+                if (ch == xfbin::kChannelLocation && c.keys.front().count >= 3) {
+                    CurveAt(c, f, false, v);
+                    p = Point3(static_cast<float>(v[0]), static_cast<float>(v[1]), static_cast<float>(v[2]));
+                } else if (ch == xfbin::kChannelScale && c.keys.front().count >= 3) {
+                    CurveAt(c, f, false, v);
+                    s = Point3(static_cast<float>(v[0]), static_cast<float>(v[1]), static_cast<float>(v[2]));
+                } else if (ch == xfbin::kChannelRotationQuat && c.keys.front().count >= 4) {
+                    CurveAt(c, f, true, v);
+                    q = rotation(xfbin::MakeRotationFromQuat(v[0], v[1], v[2], v[3]));
+                } else if (ch == xfbin::kChannelRotationEuler && c.keys.front().count >= 3) {
+                    CurveAt(c, f, false, v);
+                    q = rotation(xfbin::MakeRotation(v[0], v[1], v[2]));
+                }
+            }
+        }
+        Matrix3 m = ScaleMatrix(s);
+        Matrix3 r;
+        q.MakeMatrix(r);
+        m = m * r;
+        m.SetTrans(p * scale);
+        return m;
+    };
+    auto bewegt = [&](const CoordKey& k) {
+        const auto it = eintrag.find(k);
+        if (it == eintrag.end()) return false;
+        for (const xfbin::AnmCurve& c : it->second->curves)
+            if (c.keys.size() > 1) return true;
+        return false;
+    };
+    auto handleVon = [&](const CoordKey& k) -> ULONG {
+        const size_t slot = SceneSlotOfRef(anm, k.first);
+        if (slot == SIZE_MAX || slot >= boneHandles_.size()) return 0;
+        const xfbin::AnmClumpRef& cr = anm.clumps[static_cast<size_t>(k.first)];
+        if (k.second < 0 || static_cast<size_t>(k.second) >= cr.boneNames.size()) return 0;
+        const xfbin::Clump& c = sceneClumps_[slot];
+        for (size_t bi = 0; bi < c.nodes.size() && bi < boneHandles_[slot].size(); ++bi)
+            if (c.nodes[bi].name == cr.boneNames[static_cast<size_t>(k.second)]) return boneHandles_[slot][bi];
+        return 0;
+    };
+
+    const int tpf = GetTicksPerFrame();
+    const int n = std::max(1, static_cast<int>(std::ceil(anm.frameCount - 1e-6)));
+    int gebacken = 0;
+
+    for (const xfbin::AnmCoordParent& cp : anm.coordParents) {
+        if (cp.parentClump == cp.childClump) continue;
+        const CoordKey kind{ cp.childClump, cp.childCoord };
+        const ULONG h = handleVon(kind);
+        INode* node = h ? ip->GetINodeByHandle(h) : nullptr;
+        if (node == nullptr) continue;
+        Control* tmc = node->GetTMController();
+        if (tmc == nullptr) continue;
+
+        // Die Kette nach oben - bis zum Ende oder bis zu einem
+        // Knoten, der in Max ohnehin schon Vorfahre ist.
+        std::set<ULONG> vorfahrenMax;
+        for (INode* p = node->GetParentNode(); p != nullptr && !p->IsRootNode(); p = p->GetParentNode()) vorfahrenMax.insert(p->GetHandle());
+        std::vector<CoordKey> kette;
+        bool animiert = bewegt(kind);
+        for (CoordKey k = kind; kette.size() < 64;) {
+            const auto it = elter.find(k);
+            if (it == elter.end() || it->second.first < 0) break;
+            const ULONG ph = handleVon(it->second);
+            if (ph != 0 && vorfahrenMax.count(ph)) break;
+            kette.push_back(it->second);
+            animiert = animiert || bewegt(it->second);
+            k = it->second;
+        }
+        if (kette.empty()) continue;
+
+        Control* posCtrl = tmc->GetPositionController();
+        Control* rotCtrl = tmc->GetRotationController();
+        Control* sclCtrl = tmc->GetScaleController();
+        const TimeValue t0 = static_cast<TimeValue>(static_cast<double>(startFrame) * tpf + 0.5);
+        const TimeValue t1 = static_cast<TimeValue>((static_cast<double>(startFrame) + anm.frameCount) * tpf + 0.5);
+        // Was BuildAnimAt aus den eigenen Kurven geschrieben hat, faellt
+        // weg - auch Keys auf Hundertstel-Frames zwischen den Bildern.
+        for (Control* c : { posCtrl, rotCtrl, sclCtrl }) {
+            if (c == nullptr) continue;
+            Tab<TimeValue> zeiten;
+            c->GetKeyTimes(zeiten, Interval(t0, t1), 0);
+            for (int i = zeiten.Count() - 1; i >= 0; --i) c->DeleteKeyAtTime(zeiten[i]);
+        }
+        for (int f = 0; f <= n; f += animiert ? 1 : n) {
+            const double fr = std::min(static_cast<double>(f), anm.frameCount);
+            Matrix3 m = lokal(kind, fr);
+            for (const CoordKey& k : kette) m = m * lokal(k, fr);
+            AffineParts ap;
+            decomp_affine(m, &ap);
+            const TimeValue t = std::min(t1, static_cast<TimeValue>((fr + static_cast<double>(startFrame)) * tpf + 0.5));
+            if (posCtrl && (channelMask & 1)) posCtrl->SetValue(t, &ap.t, TRUE, CTRL_ABSOLUTE);
+            if (rotCtrl && (channelMask & 2)) rotCtrl->SetValue(t, &ap.q, TRUE, CTRL_ABSOLUTE);
+            if (sclCtrl && (channelMask & 4)) {
+                ScaleValue sv(ap.k * ap.f, ap.u);
+                sclCtrl->SetValue(t, &sv, TRUE, CTRL_ABSOLUTE);
+            }
+        }
+        ++gebacken;
+    }
+    return gebacken;
 }
 
 // ------------------------------------------------------------
@@ -2748,8 +2962,29 @@ int XfbinImportInterface::BuildVisibility(int index, float startFrame,
         IKeyControl* ik = GetVisKeys(node);
         if (ik == nullptr) continue;
 
+        // Die Referenz dieses Exemplars in der Animation: die
+        // m.instance-te mit diesem Clump-Namen.
+        int refIndex = -1;
+        for (int ci = 0, inst = 0; ci < static_cast<int>(anm.clumps.size()); ++ci) {
+            if (anm.clumps[static_cast<size_t>(ci)].clumpName != m.clumpName) continue;
+            if (inst++ == m.instance) { refIndex = ci; break; }
+        }
+
         // --- Fall 1: gehoert nicht zu dieser Animation ---
-        if (present.find(m.clumpName) == present.end()) {
+        //
+        // Auch dann, wenn die Animation zwar den Clump nennt, aber
+        // nicht dieses Exemplar - oder nicht dieses Modell. Jede
+        // Referenz zaehlt die Modelle auf, die sie zeigt: Narutos
+        // Ultimate nennt "1nrtspl1_line03" 28-mal, einmal ohne
+        // Modell (nur der Fuehrungsknochen), sonst abwechselnd mit
+        // "_a01" oder "_b01". Wer alle Modelle zeigt, hat doppelt
+        // so viele Speedlines und eine, die nie verschwindet.
+        bool fremd = present.find(m.clumpName) == present.end() || (refIndex < 0 && m.instance > 0);
+        if (!fremd && refIndex >= 0 && !m.modelName.empty() && anm.clumps[static_cast<size_t>(refIndex)].modelsKnown) {
+            const std::vector<xfbin::RawString>& mn = anm.clumps[static_cast<size_t>(refIndex)].modelNames;
+            fremd = std::find(mn.begin(), mn.end(), m.modelName) == mn.end();
+        }
+        if (fremd) {
             AppendVisKey(ik, t0, 0.0f);
             AppendVisKey(ik, t1, 0.0f);
             ++hidden;
@@ -2757,50 +2992,105 @@ int XfbinImportInterface::BuildVisibility(int index, float startFrame,
             continue;
         }
 
-        // --- Fall 2: Deckkraft-Kurve des Mesh-Bones suchen ---
-        const xfbin::AnmCurve* opacity = nullptr;
+        // --- Fall 2: Deckkraft-Kurven entlang der Knochenkette ---
+        //
+        // Das Spiel blendet meist nicht den Mesh-Bone aus, sondern
+        // den WURZELKNOCHEN des ganzen Modells - beim Erwachen
+        // schaltet "1nrt00t0 trall" Naruto in Frame 42 ab und
+        // "1nrv00t0 trall" die Fuchsform an. Die Deckkraft vererbt
+        // sich nach unten; sichtbar ist das Mesh also nach dem
+        // Produkt aller Kurven vom Mesh-Bone bis zur Wurzel.
+        //
+        // Gelaufen wird ueber die Elterntabelle der Animation: so
+        // kommt auch die Deckkraft eines Dummys aus einem anderen
+        // Clump mit (Narutos Ultimate blendet ihre Kulissen-Effekte
+        // ueber 36 Exemplare von "1efc_dmy01" ein und aus). Fehlt
+        // ein Coord in der Tabelle, hilft das Skelett des Clumps.
+        std::vector<const xfbin::AnmCurve*> kette;
+        const xfbin::Clump* sc = nullptr;
+        for (size_t ci = 0; ci < sceneClumps_.size(); ++ci) {
+            if (sceneClumps_[ci].name == m.clumpName && sceneInstance_[ci] == m.instance) { sc = &sceneClumps_[ci]; break; }
+        }
+        auto coordVon = [&](int ci, const xfbin::RawString& bone) {
+            const std::vector<xfbin::RawString>& bn = anm.clumps[static_cast<size_t>(ci)].boneNames;
+            for (size_t k = 0; k < bn.size(); ++k) if (bn[k] == bone) return static_cast<int>(k);
+            return -1;
+        };
+        if (refIndex >= 0) {
+            std::map<std::pair<int, int>, std::pair<int, int>> elter;
+            for (const xfbin::AnmCoordParent& cp : anm.coordParents)
+                elter[{ cp.childClump, cp.childCoord }] = { cp.parentClump, cp.parentCoord };
+            std::map<std::pair<int, int>, const xfbin::AnmEntry*> eintrag;
+            for (const xfbin::AnmEntry& e : anm.entries)
+                if (e.entryFormat == xfbin::kEntryBone) eintrag[{ e.clumpIndex, e.boneIndex }] = &e;
 
-        for (const xfbin::AnmEntry& e : anm.entries) {
-            if (e.entryFormat != xfbin::kEntryBone) continue;
-            if (e.clumpName != m.clumpName) continue;
-            if (e.targetName != m.boneName) continue;
-
-            // Die richtige Instanz: so viele gleichnamige
-            // Clump-Referenzen stehen vor dieser.
-            int inst = 0;
-            for (int ci = 0; ci < e.clumpIndex; ++ci) {
-                if (static_cast<size_t>(ci) < anm.clumps.size() &&
-                    anm.clumps[static_cast<size_t>(ci)].clumpName == e.clumpName) {
-                    ++inst;
-                }
+            // Einstieg: der Mesh-Bone oder sein naechster Vorfahre,
+            // den die Animation kennt.
+            std::pair<int, int> k{ refIndex, -1 };
+            int bi = -1;
+            if (sc != nullptr)
+                for (size_t i = 0; i < sc->nodes.size(); ++i)
+                    if (sc->nodes[i].name == m.boneName) { bi = static_cast<int>(i); break; }
+            for (int guard = 0; guard < 512; ++guard) {
+                k.second = coordVon(refIndex, bi >= 0 ? sc->nodes[static_cast<size_t>(bi)].name : m.boneName);
+                if (k.second >= 0 || bi < 0) break;
+                bi = sc->nodes[static_cast<size_t>(bi)].parent;
             }
-            if (inst != m.instance) continue;
-
-            for (const xfbin::AnmCurve& c : e.curves) {
-                if (xfbin::BoneChannelOf(c.curveIndex, c.curveFormat) ==
-                        xfbin::kChannelOpacity && !c.keys.empty()) {
-                    opacity = &c;
+            std::set<std::pair<int, int>> besucht;
+            for (int guard = 0; k.first >= 0 && k.second >= 0 && guard < 512 && besucht.insert(k).second; ++guard) {
+                const auto e = eintrag.find(k);
+                if (e != eintrag.end())
+                    for (const xfbin::AnmCurve& c : e->second->curves)
+                        if (xfbin::BoneChannelOf(c.curveIndex, c.curveFormat) == xfbin::kChannelOpacity && !c.keys.empty())
+                            kette.push_back(&c);
+                const auto p = elter.find(k);
+                if (p != elter.end()) { k = p->second; continue; }
+                // nicht in der Tabelle: Elternteil laut Skelett
+                std::pair<int, int> weiter{ -1, -1 };
+                if (static_cast<size_t>(k.first) < anm.clumps.size()) {
+                    const xfbin::AnmClumpRef& cr = anm.clumps[static_cast<size_t>(k.first)];
+                    for (const xfbin::Clump& c : sceneClumps_) {
+                        if (c.name != cr.clumpName || static_cast<size_t>(k.second) >= cr.boneNames.size()) continue;
+                        int i = -1;
+                        for (size_t j = 0; j < c.nodes.size(); ++j)
+                            if (c.nodes[j].name == cr.boneNames[static_cast<size_t>(k.second)]) { i = static_cast<int>(j); break; }
+                        for (i = i >= 0 ? c.nodes[static_cast<size_t>(i)].parent : -1; i >= 0; i = c.nodes[static_cast<size_t>(i)].parent) {
+                            const int kk = coordVon(k.first, c.nodes[static_cast<size_t>(i)].name);
+                            if (kk >= 0) { weiter = { k.first, kk }; break; }
+                        }
+                        break;
+                    }
                 }
+                k = weiter;
             }
-            break;
         }
 
-        if (opacity != nullptr) {
-            // Anfang und Ende festnageln, damit nichts in die
-            // Nachbarsequenzen laeuft.
-            AppendVisKey(ik, t0,
-                static_cast<float>(opacity->keys.front().value[0]));
-
-            for (const xfbin::AnmKey& k : opacity->keys) {
-                const TimeValue t = static_cast<TimeValue>(
-                    (k.frame + static_cast<double>(startFrame)) * tpf + 0.5);
-                if (t > t0 && t < t1) {
-                    AppendVisKey(ik, t, static_cast<float>(k.value[0]));
+        if (!kette.empty()) {
+            // Volle Deckkraft steht als 0x8000 in der Datei; der
+            // Parser liest int16 und macht daraus -1 (so liest es auch
+            // die Python-Referenz). Gemeint ist 1.
+            auto deckkraft = [](double v) { return v < 0.0 ? std::min(1.0, v + 2.0) : std::min(1.0, v); };
+            auto wert = [&](const xfbin::AnmCurve* c, double f) {
+                double v = c->keys.front().value[0];
+                for (const xfbin::AnmKey& k : c->keys) {
+                    if (k.frame > f + 1e-6) break;
+                    v = k.value[0];
                 }
+                return deckkraft(v);
+            };
+            // Bild fuer Bild, Keys nur wo sich etwas aendert - plus
+            // Anfang und Ende, damit nichts in die Nachbarsequenzen
+            // laeuft.
+            const int n = std::max(1, static_cast<int>(std::lround(anm.frameCount)));
+            bool vorher = false;
+            for (int f = 0; f <= n; ++f) {
+                double v = 1.0;
+                for (const xfbin::AnmCurve* c : kette) v *= wert(c, f);
+                const bool an = v > 0.02;
+                const TimeValue t = std::min(t1, static_cast<TimeValue>((f + static_cast<double>(startFrame)) * tpf + 0.5));
+                if (f == 0 || f == n || an != vorher) AppendVisKey(ik, f == 0 ? t0 : (f == n ? t1 : t), an ? 1.0f : 0.0f);
+                vorher = an;
             }
-
-            AppendVisKey(ik, t1,
-                static_cast<float>(opacity->keys.back().value[0]));
         } else {
             // --- Fall 3: dabei, aber ohne Kurve ---
             AppendVisKey(ik, t0, 1.0f);

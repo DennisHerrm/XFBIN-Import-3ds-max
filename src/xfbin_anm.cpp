@@ -577,6 +577,14 @@ void WriteAnimDump(const std::vector<Anm>& anims, const std::string& label,
               << " models=" << cr.modelNames.size() << "\n";
         }
 
+        if (includeKeys) {
+            for (size_t pi = 0; pi < a.coordParents.size(); ++pi) {
+                const AnmCoordParent& cp = a.coordParents[pi];
+                o << "coordparent[" << ai << "." << pi << "] parent=" << cp.parentClump << "." << cp.parentCoord
+                  << " child=" << cp.childClump << "." << cp.childCoord << "\n";
+            }
+        }
+
         for (size_t ei = 0; ei < a.entries.size(); ++ei) {
             const AnmEntry& e = a.entries[ei];
 

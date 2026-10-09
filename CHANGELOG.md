@@ -64,6 +64,27 @@ Spielen - kein Auspacken, kein Ordnerwaehlen mehr.
 - Verwandlungen: spricht eine eigene Animation ein anderes
   Koerpermodell an (Narutos Erwachen -> `1nrvbod1`), wird es samt
   seiner Effekte geladen und nur dort gezeigt.
+- Storm Connections: Partikel-Chunks der Version 123 (Zeitleisten auf
+  8 Bytes ausgerichtet, angehaengter Zusatzblock) werden gelesen -
+  71.550 Emitter, keine Warnung mehr.
+
+### Sichtbarkeit wie im Spiel
+- Deckkraft wirkt entlang der ganzen Knochenkette: das Spiel blendet
+  meist den Wurzelknochen aus ("trall"). Volle Deckkraft steht als
+  0x8000 in der Datei. Beim Erwachen verschwindet Naruto jetzt in
+  Frame 42, wenn die Fuchsform erscheint.
+- Die Elterntabelle der Animation wird ausgewertet. Effekte haengen dort
+  oft an leeren Fuehrungs-Clumps ("1efc_dmy01"), die das Spiel bewegt,
+  skaliert und ein- und ausblendet. Die Kette wird Bild fuer Bild in die
+  Effekt-Wurzel gerechnet, die Deckkraft der Fuehrung zaehlt mit - die
+  Kulissen-Effekte der Ultimate fliegen jetzt mit Naruto mit, statt am
+  Ursprung zu stehen.
+- Jede Clump-Referenz nennt die Modelle, die dieses Exemplar zeigt. Nur
+  die sind sichtbar: Speedlines erscheinen einzeln statt doppelt, die
+  Zusatz-Gliedmassen (`asianime`, `udeanm`) nur in den Animationen, die
+  sie brauchen. Exemplare, die eine Animation nicht nennt, sind aus.
+  In Narutos Ultimate sind gleichzeitig 17-66 statt rund 195 der 268
+  Effektmodelle zu sehen.
 
 ### WC3-Modus
 Nach den WhiteoutDex-Handouts fuer Importer:

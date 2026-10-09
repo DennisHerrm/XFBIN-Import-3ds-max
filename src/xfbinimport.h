@@ -629,6 +629,7 @@ private:
         ULONG              handle = 0;
         xfbin::RawString   clumpName;
         xfbin::RawString   boneName;
+        xfbin::RawString   modelName;   // nuccChunkModel, fuer die Modell-Liste der Anim-Referenz
         int                instance = 0;
     };
     std::vector<SceneMesh> sceneMeshes_;
@@ -705,6 +706,16 @@ private:
     bool ResolveEntryTarget(const xfbin::Anm& anm,
                             const xfbin::AnmEntry& entry,
                             size_t& clumpSlot, size_t& boneSlot);
+
+    // Clump-Referenz ci einer Animation -> Platz in sceneClumps_
+    // (ueber Name und laufende Nummer), SIZE_MAX wenn nicht da.
+    size_t SceneSlotOfRef(const xfbin::Anm& anm, int ci) const;
+
+    // Effekt-Wurzeln, deren Elternteil laut Animation in einem
+    // ANDEREN Clump steht (meist ein Dummy "1efc_dmy01", der
+    // nicht in der Szene ist): die Bewegung der Elternkette Bild
+    // fuer Bild in die Wurzel einrechnen.
+    int BakeCoordParents(const xfbin::Anm& anm, float startFrame, int channelMask, float scale);
 
     // Skin-Modifier auf einen fertig gebauten Knoten setzen.
     // Getrennt von BuildMeshesSkinned, weil dort sonst eine

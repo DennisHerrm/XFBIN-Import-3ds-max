@@ -178,6 +178,9 @@ struct AnmClumpRef {
     RawString clumpName;
     std::vector<RawString> boneNames;
     std::vector<RawString> modelNames;
+    // false nach dem Umhaengen auf einen anderen Clump: die
+    // Modellnamen gehoeren dann zum alten und sagen nichts.
+    bool modelsKnown = true;
 };
 
 struct AnmCoordParent {
