@@ -34,6 +34,7 @@ SRC = 'src/xfbinimport.cpp'
 # Bezeichner aus dem Plugin -> Platzhalter passenden Typs
 REPL = [
     (r'Cp932ToWide\([^()]*\)', 'sv'),
+    (r'\bnode->GetName\(\)', 'sv'),
     (r'[A-Za-z_][\w:.]*\.size\(\)\s*-\s*[A-Za-z_]\w*', 'zv'),
     (r'[A-Za-z_][\w:.]*\.size\(\)', 'zv'),
     (r'static_cast<\w+>\([^()]*\)', 'iv'),
@@ -42,7 +43,7 @@ REPL = [
      r'skinText)\b', 'sv'),
     (r'\b(total|bones|verts|tris|keys|before)\b', 'zv'),
     (r'\b(made|skipped|skinned|dupes|failed|unmatched|foreignClump|missing|'
-     r'rejected|weighted|touched|hidden|keysSet|n)\b', 'iv'),
+     r'rejected|weighted|touched|hidden|keysSet|ersatz|gebacken|n)\b', 'iv'),
     (r'\banm\.frameCount\b|\bstartFrame\b|\bscale\b', 'dv'),
     (r'\bchannelMask\b|\bexplicitNormals\b', 'iv'),
     (r'\bok\b', 'bv'),
