@@ -215,6 +215,41 @@ std::string OhneEndung(const std::string& name) {
     return p == std::string::npos ? name : name.substr(0, p);
 }
 
+// Die Clump-Namen einer Spieldatei (nur der Kopf wird ausgewertet).
+std::vector<std::string> ClumpsIn(const xfbin::Spieldaten& d, const std::string& pfad) {
+    std::vector<std::string> aus;
+    std::vector<uint8_t> b;
+    std::string fe;
+    xfbin::XfbinFile kopf;
+    if (!d.Lies(pfad, b, fe) || !xfbin::ReadXfbinBuffer(b.data(), b.size(), kopf).ok) return aus;
+    for (const xfbin::XfbinPage& pg : kopf.pages)
+        for (const xfbin::XfbinChunk& ch : pg.chunks)
+            if (ch.type != nullptr && ch.name != nullptr && *ch.type == "nuccChunkClump") aus.push_back(*ch.name);
+    return aus;
+}
+
+// Katalogeintrag eines Codes (niedrigstes Kostuem) - fuer Clump und
+// Gruppen einer anderen Fassung. nullptr, wenn der Katalog zu einem
+// anderen Bestand gehoert.
+const xfbin::FigurEintrag* KatalogFigur(const xfbin::Spieldaten& d, const std::string& code) {
+    if (!g_katalog || g_daten.get() != &d) return nullptr;
+    const xfbin::FigurEintrag* best = nullptr;
+    for (const xfbin::FigurEintrag& f : g_katalog->figuren)
+        if (f.code == code && (best == nullptr || f.kostuem < best->kostuem)) best = &f;
+    return best;
+}
+
+// Effekt-Clumps: "2nrteff1_10", "1efc_dmy01", "2efb_frs00".
+bool IstEffektName(const std::string& c) {
+    return c.find("eff") != std::string::npos || (c.size() > 4 && c[1] == 'e' && c[2] == 'f' && c[4] == '_');
+}
+
+// "bod" + Ziffern: eine Modelldatei, keine Animationsdatei (bod1c).
+bool IstModellRest(const std::string& rest) {
+    if (rest.size() < 4 || rest.compare(0, 3, "bod") != 0) return false;
+    return std::all_of(rest.begin() + 3, rest.end(), [](char ch) { return ch >= '0' && ch <= '9'; });
+}
+
 } // namespace
 
 bool Daten(const std::wstring& ordner, const xfbin::Spieldaten*& daten, const xfbin::Katalog*& katalog, std::string& fehler) {
@@ -269,13 +304,23 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
     const std::string titel = "Import " + f.code + " bod" + std::to_string(f.kostuem) + " (" + f.name + ") aus " + Utf8(d.Ordner());
     LogNeu(titel.c_str());
     const DWORD t0 = GetTickCount();
+    DWORD tAbschnitt = t0;
+    std::string zeiten;   // je Abschnitt, fuers Protokoll
+    auto zeit = [&](const char* was) {
+        const DWORD jetzt = GetTickCount();
+        zeiten += std::string(zeiten.empty() ? "" : ", ") + was + " " + std::to_string((jetzt - tAbschnitt) / 1000.0).substr(0, 4) + " s";
+        tAbschnitt = jetzt;
+    };
 
     x.Close();
     x.TexturIndexLeeren();
     x.SetFarbVariante(o.farbe);
     EffekteZuruecksetzen();
     if (o.leeren) {
-        FuehreSkript(L"delete objects");
+        // Dazu die Ebenen, die dabei leer werden - sonst blieben etwa
+        // die "clone"-Ebenen des vorigen Imports stehen.
+        FuehreSkript(L"(delete objects; for i = LayerManager.count - 1 to 1 by -1 do (local l = LayerManager.getLayer i; local ns; l.nodes &ns;"
+                     L" if ns.count == 0 and l.getNumChildren() == 0 and not l.current do LayerManager.deleteLayerByName l.name); OK)");
         x.ClearScene();
     } else {
         x.PruneScene();
@@ -283,6 +328,19 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
     x.SetBoneSize(o.knochenGroesse);
     x.SetSplitByMaterial(o.wc3);
     x.ClearAnims();
+    // Filter und Ebenen-Haken gelten nur fuer diesen Import - auch bei
+    // einem Abbruch. Danach ist wieder die Ebene aktuell, die es vorher
+    // war (die Knoten entstehen gleich in ihrer eigenen).
+    FuehreSkript(L"(global xfEbeneVorher = LayerManager.current.name; OK)");
+    struct FilterZurueck {
+        XfbinImportInterface& x;
+        ~FilterZurueck() {
+            x.SetClumpSkip({});
+            x.SetSingleInstance({});
+            x.SetLayerHook(nullptr);
+            FuehreSkript(L"(local l = LayerManager.getLayerFromName xfEbeneVorher; if l != undefined do l.current = true; OK)");
+        }
+    } filterZurueck{ x };
 
     const std::string clump = xfbin::ClumpName(f);
     // Code des Modells - meist der der Figur, bei Fassungen ohne
@@ -290,6 +348,16 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
     const std::string mc = clump.substr(0, 4);
     std::wstring fehler;
     size_t dateien = 0;
+
+    // Ein weiterer Koerper mit dem Code der Figur ist ein
+    // Doppelgaenger: 2nrtbod2 und 2nrtbod3 sind Narutos
+    // Schattendoppelgaenger (eigenes, einfacheres Modell). Echte
+    // Kostueme stehen in eigenen Dateien und werden auf die Figur
+    // umgeleitet, Verwandlungen haben einen anderen Code (1nrv).
+    auto istDoppelgaenger = [&](const std::string& c) {
+        return c != clump && IstKoerper(c) && (c.compare(0, f.code.size(), f.code) == 0 || c.compare(0, mc.size(), mc) == 0);
+    };
+    std::set<std::string> doppelgaenger;   // bei "Original only" ausgelassen
 
     // Knochen-Praefix des eigenen Skeletts: "2tyo00" fuer Chojis
     // erstes Kostuem, "2tyo01" fuer das zweite. Animationen eines
@@ -302,15 +370,52 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
         std::vector<xfbin::Clump> cl;
         if (d.Lies(f.modell, b, fe) && xfbin::ReadXfbinBuffer(b.data(), b.size(), datei).ok) xfbin::ParseClumps(datei, cl, fe, w);
         for (const xfbin::Clump& c : cl) {
+            if (istDoppelgaenger(c.name)) doppelgaenger.insert(c.name);
             if (c.name != clump) continue;
             for (const xfbin::CoordNode& n : c.nodes)
                 if (n.name.size() >= mc.size() + 2 && n.name.compare(0, mc.size(), mc) == 0) { zielPraefix = n.name.substr(0, mc.size() + 2); break; }
         }
     }
-    auto praefixVon = [&](const xfbin::AnmClumpRef& r) {
+    auto praefixMit = [](const xfbin::AnmClumpRef& r, const std::string& code) {
         for (const std::string& b : r.boneNames)
-            if (b.size() >= mc.size() + 2 && b.compare(0, mc.size(), mc) == 0) return b.substr(0, mc.size() + 2);
+            if (b.size() >= code.size() + 2 && b.compare(0, code.size(), code) == 0) return b.substr(0, code.size() + 2);
         return std::string();
+    };
+    auto praefixVon = [&](const xfbin::AnmClumpRef& r) { return praefixMit(r, mc); };
+
+    // Koerper einer anderen Fassung derselben Figur (andere Ziffer) auf
+    // die eigene umhaengen: Chojis 3tyoawa bewegt "2tyobod1", seine
+    // Form-Datei auch "2tyvbod1" - gemeint sind 3tyobod1 und die Form
+    // 3tyvbod1. Wie bei Kostuemen nur, wenn die Animation das Ziel
+    // nicht selbst nennt.
+    auto fassungUmhaengen = [&](size_t von) {
+        for (const std::string& c : x.AnimClumpNames(von)) {
+            if (!IstKoerper(c)) continue;
+            const std::string code = c.substr(0, 4);
+            if (code == f.code || code == mc) continue;
+            for (const std::string& basis : { mc, f.code }) {
+                if (code[0] == basis[0]) continue;
+                std::string ziel;
+                if (code.compare(1, 3, basis, 1, 3) == 0) {
+                    ziel = clump;                                              // 2tyo -> die Figur
+                } else if (code.compare(1, 2, basis, 1, 2) == 0) {
+                    const std::string z = std::string(1, basis[0]) + c.substr(1);   // 2tyvbod1 -> 3tyvbod1
+                    if (d.Gibt("data/spc/" + z + ".xfbin")) ziel = z;
+                }
+                if (ziel.empty()) continue;
+                std::set<std::string> quellen;
+                for (size_t i = von; i < x.Anims().size(); ++i)
+                    for (const xfbin::AnmClumpRef& r : x.Anims()[i].clumps)
+                        if (r.clumpName == c) quellen.insert(praefixMit(r, code));
+                for (const std::string& q : quellen) {
+                    std::string zp = (ziel == clump) ? zielPraefix : std::string();
+                    if (zp.empty() && q.size() == 6) zp = ziel.substr(0, 4) + q.substr(4);   // 2tyv00 -> 3tyv00
+                    const bool gleich = q.empty() || zp.empty();
+                    x.RetargetAnims(von, c, ziel, gleich ? std::string() : q, gleich ? std::string() : zp, true, q);
+                }
+                break;
+            }
+        }
     };
 
     // --- 1. Animationen: nur die eigenen ---------------------
@@ -342,10 +447,62 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
                 x.RetargetAnims(von, c, clump, gleich ? std::string() : q, gleich ? std::string() : zielPraefix, true, q);
             }
         }
+        fassungUmhaengen(von);
         const size_t behalten = x.KeepAnimsFor(von, clump, true);
         x.TagAnims(von, xfbin::AnimGruppe(f, pfad));
         ++dateien;
         Log("  %s: %zu eigene Animationen", pfad.c_str(), behalten);
+    }
+
+    // --- 1b. Bewegungen anderer Fassungen und der Form --------
+    // Die prm-Datei nennt, welche Bewegungen die Figur benutzt - auch
+    // die einer frueheren Fassung (Choji 3tyo bringt nur 3tyoawa mit
+    // und nutzt 161 Bewegungen von 2tyo) und die ihrer Form im
+    // Erwachen (Narutos Fuchsmantel: 2nrvawa.xfbin). Die einer
+    // frueheren Fassung bewegen deren Skelett und werden auf die Figur
+    // umgehaengt (2tyobod1, 2tyo00 -> 3tyobod1, 3tyo00); die der Form
+    // bewegen die Form.
+    std::vector<std::string> animDateien = f.anims;   // alle gelesenen - fuer die Effekte
+    std::vector<std::string> fassungen;               // Codes frueherer Fassungen ("2tyo")
+    std::set<std::string> prmFormen;                  // Formen mit eigenen Bewegungen ("2nrv")
+    for (const xfbin::Bewegungsquelle& q : xfbin::PrmBewegungen(d, f)) {
+        xfbin::FigurEintrag qf;
+        qf.code = q.code;
+        if (const xfbin::FigurEintrag* k = KatalogFigur(d, q.code)) qf = *k;
+        if (!q.form) fassungen.push_back(q.code);
+        else prmFormen.insert(q.code);
+        size_t zahl = 0;
+        for (const std::string& pfad : q.dateien) {
+            if (std::find(animDateien.begin(), animDateien.end(), pfad) != animDateien.end()) continue;
+            if (!Oeffne(x, d, pfad, fehler)) { Log("  %s: %s", pfad.c_str(), Utf8(fehler).c_str()); continue; }
+            const size_t von = x.Anims().size();
+            if (x.ParseAnimsAppend() < 0 && x.Anims().size() == von) continue;
+            if (x.KeepAnimsNamed(von, q.namen) == 0) continue;
+            // 4nrt-Bewegungen (Kurama Link) sprechen dessen Modell
+            // 3nrtbod1 an - auch das gehoert hier zur Figur.
+            if (!q.form) {
+                const std::string quellClump = xfbin::ClumpName(qf);
+                if (quellClump != clump && quellClump.compare(1, 3, mc, 1, 3) != 0) {
+                    std::set<std::string> praefixe;
+                    for (size_t i = von; i < x.Anims().size(); ++i)
+                        for (const xfbin::AnmClumpRef& r : x.Anims()[i].clumps)
+                            if (r.clumpName == quellClump) praefixe.insert(praefixMit(r, quellClump.substr(0, 4)));
+                    for (const std::string& pq : praefixe) {
+                        const bool gleich = pq.empty() || zielPraefix.empty();
+                        x.RetargetAnims(von, quellClump, clump, gleich ? std::string() : pq, gleich ? std::string() : zielPraefix, true, pq);
+                    }
+                }
+            }
+            fassungUmhaengen(von);
+            const size_t behalten = x.KeepAnimsFor(von, clump, true);
+            x.TagAnims(von, xfbin::AnimGruppe(qf, pfad));
+            if (behalten == 0) continue;
+            animDateien.push_back(pfad);
+            ++dateien;
+            zahl += behalten;
+        }
+        Log("  %s %s: %zu Animationen aus %zu Dateien (prm nennt %zu Namen)", q.form ? "Form" : "Fassung", q.code.c_str(), zahl,
+            q.dateien.size(), q.namen.size());
     }
     if (o.reaktionen && !f.gemeinsam.empty() && Oeffne(x, d, f.gemeinsam, fehler)) {
         const size_t von = x.Anims().size();
@@ -358,82 +515,233 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
     }
     const size_t animZahl = x.Anims().size();
 
+    // --- 1c. WC3: Doppelgaenger auf moeglichst wenige Klon-Rigs ---
+    // Jede Animation legt ihre Doppelgaenger der Reihe nach auf das
+    // erste freie Rig des einfachen Klon-Modells - auch den vollen
+    // zweiten Naruto (2nrtbod1 #2), den nur 2nrtskl1_atk2 zeigt, und
+    // 2nrtbod3. Es braucht dann nur so viele Rigs, wie eine Animation
+    // gleichzeitig zeigt; die Sequenzen liegen ja hintereinander. Was
+    // das einfache Modell nicht hat (Gesichtsknochen), faellt weg. Die
+    // Doppelgaenger einer Form bleiben, wie sie sind.
+    std::set<std::string> ungenutzteKlone;   // nach dem Zusammenlegen ohne Referenz
+    if (o.wc3) {
+        auto istKlonKoerper = [&](const std::string& c) {
+            if (c == clump || !IstKoerper(c)) return false;
+            if (istDoppelgaenger(c)) return true;
+            for (const std::string& b : { f.code, mc })            // Fassung: 2nrtbod2 bei 7nrt
+                if (c[0] != b[0] && c.compare(1, 3, b, 1, 3) == 0) return true;
+            return false;
+        };
+        // Das Klon-Modell: der meistgenutzte eigene Doppelgaenger.
+        std::map<std::string, int> nutzung;
+        for (const xfbin::Anm& a : x.Anims())
+            for (const xfbin::AnmClumpRef& r : a.clumps)
+                if (istKlonKoerper(r.clumpName) && istDoppelgaenger(r.clumpName)) ++nutzung[r.clumpName];
+        if (!nutzung.empty()) {
+            const std::string rig = std::max_element(nutzung.begin(), nutzung.end(),
+                                                     [](const auto& p, const auto& q) { return p.second < q.second; })->first;
+            std::string rigPraefix;
+            for (const xfbin::Anm& a : x.Anims()) {
+                for (const xfbin::AnmClumpRef& r : a.clumps)
+                    if (r.clumpName == rig) { rigPraefix = praefixMit(r, rig.substr(0, 4)); break; }
+                if (!rigPraefix.empty()) break;
+            }
+            std::set<std::string> vorher;
+            size_t umgehaengt = 0, hoechstens = 0;
+            for (size_t i = 0; i < x.Anims().size(); ++i) {
+                const xfbin::Anm& a = x.Anims()[i];
+                bool originalGesehen = false;
+                std::vector<size_t> klonRefs;
+                // Nur Referenzen mit Modell: die acht Hilfsknochen-Referenzen
+                // aus 1cmncol1fe ergaeben sonst acht Rigs.
+                for (size_t k = 0; k < a.clumps.size(); ++k) {
+                    const std::string& c = a.clumps[k].clumpName;
+                    const bool modell = !a.clumps[k].modelNames.empty();
+                    if (c == clump) {
+                        if (originalGesehen && modell) klonRefs.push_back(k);   // das erste ist das Original
+                        originalGesehen = true;
+                    } else if (istKlonKoerper(c) && modell) {
+                        klonRefs.push_back(k);
+                    }
+                }
+                hoechstens = std::max(hoechstens, klonRefs.size());
+                for (size_t k : klonRefs) {
+                    const xfbin::AnmClumpRef& r = x.Anims()[i].clumps[k];
+                    vorher.insert(r.clumpName);
+                    if (r.clumpName == rig) continue;
+                    const std::string quelle = praefixMit(r, r.clumpName.substr(0, 4));
+                    const bool gleich = quelle.empty() || rigPraefix.empty();
+                    x.RetargetRef(i, k, rig, gleich ? std::string() : quelle, gleich ? std::string() : rigPraefix);
+                    ++umgehaengt;
+                }
+            }
+            for (const std::string& c : vorher)
+                if (c != rig && c != clump) ungenutzteKlone.insert(c);
+            for (const std::string& c : doppelgaenger)   // auch die der Modelldatei, die keiner mehr nennt
+                if (c != rig) ungenutzteKlone.insert(c);
+            std::string weg;
+            for (const std::string& c : ungenutzteKlone) weg += " " + c;
+            Log("  WC3: %zu Doppelgaenger-Referenzen auf %s umgelegt, hoechstens %zu gleichzeitig - ohne Rig:%s", umgehaengt, rig.c_str(),
+                hoechstens, weg.empty() ? " -" : weg.c_str());
+        }
+    }
+    zeit("Animationen");
+
+    // Was die Grundbewegung (Stand, Lauf, Sprung, Wurf ...) meistens mit
+    // Modell zeigt, ist immer zu sehen - Samehada auf Kisames Ruecken,
+    // Kankuros Puppe. Gezaehlt je Exemplar: Hakus Senbon fliegen nur in
+    // wenigen Wuerfen, und von Samehada traegt Kisame eins.
+    std::map<std::pair<std::string, int>, int> grundZahl;
+    int grundAnims = 0;
+    for (size_t i = 0; i < x.Anims().size() && i < x.AnimTags().size(); ++i) {
+        if (x.AnimTags()[i] != "Basic") continue;
+        ++grundAnims;
+        std::map<std::string, int> lauf;
+        for (const xfbin::AnmClumpRef& r : x.Anims()[i].clumps) {
+            const int k = lauf[r.clumpName]++;
+            if (!r.modelNames.empty()) ++grundZahl[{ r.clumpName, k }];
+        }
+    }
+    auto immerDa = [&](const std::string& c, int inst) {
+        const auto it = grundZahl.find({ c, inst });
+        return it != grundZahl.end() && 2 * it->second > grundAnims;
+    };
+
     // Partikel der eigenen Animationen: welche Effekt-Animationen,
     // Mesh- und Sprite-Partikel sie starten.
     EffektVorbereitung ev;
-    if (o.effekte) EffekteVorbereiten(x, d, f.anims, ev);
+    if (o.effekte) EffekteVorbereiten(x, d, animDateien, ev);
 
     // --- 2. Modelle ------------------------------------------
     // Das Koerpermodell, dazu eigene Zusatzmodelle, die die
     // Animationen ansprechen (Waffen, Begleiter mit dem Code der
     // Figur) - fremde Modelle nicht.
     //
-    // Ausnahme Verwandlungen: spricht eine EIGENE Animation ein
-    // anderes Koerpermodell an, ist das die Figur in anderer Form -
-    // Narutos Erwachen (1nrtawa) zeigt den Neunschwaenzigen-Mantel
-    // 1nrvbod1. Das gemeinsame Gegnermodell 1cmnbod1 ist keine.
+    // Ein anderes Koerpermodell, das eine eigene Animation anspricht:
+    //   * Form - gleiche Ziffer, letzter Buchstabe anders, und entweder
+    //     nennt die prm-Datei ihre Bewegungen oder der Code endet wie
+    //     ueblich auf "v": Narutos Erwachen (1nrtawa) zeigt den
+    //     Neunschwaenzigen-Mantel 1nrvbod1. Pains andere Pfade (2peb,
+    //     2pec ...) folgen demselben Muster, sind aber keine Form.
+    //     Ebenso Form: der Koerper einer frueheren Fassung (2tyo fuer 3tyo).
+    //   * sonst ein Begleiter: Puppen (2scxbod2, 2kkgbod1),
+    //     Beschwoerungen (3krmbod1), Pains andere Pfade, Samehada.
+    // Das gemeinsame Gegnermodell 1cmnbod1 ist keins von beiden.
+    auto istFormCode = [&](const std::string& c) {                                              // nrt -> nrv
+        if (c.size() < 4) return false;
+        for (const std::string& b : { f.code, mc })
+            if (c[0] == b[0] && c.compare(1, 2, b, 1, 2) == 0 && c[3] != b[3] && (c[3] == 'v' || prmFormen.count(c) > 0)) return true;
+        return false;
+    };
+    // Der Koerper einer anderen Fassung, der nach dem Umhaengen noch
+    // NEBEN der Figur steht, ist ein Doppelgaenger: Hokage-Naruto (7nrt)
+    // benutzt Narutos Schattendoppelgaenger 2nrtbod2 aus Storm 2.
+    auto istFassungCode = [&](const std::string& c) {                                           // 2nrt -> 7nrt
+        if (c.size() < 4) return false;
+        for (const std::string& b : { f.code, mc })
+            if (c[0] != b[0] && c.compare(1, 3, b, 1, 3) == 0) return true;
+        return false;
+    };
     std::vector<std::string> modelle = { f.modell };
     std::map<std::string, std::vector<std::string>> nurClumps;   // Datei -> nur diese Clumps bauen
     std::vector<std::string> formen;              // Codes der Verwandlungen ("1nrv")
-    std::vector<std::string> fehlend;             // eigene Koerper ohne gleichnamige Datei
+    std::set<std::string> begleiter;              // fremde Koerper, die zur Figur gehoeren
+    std::set<std::string> zubehoer;               // Teile aus Sammeldateien: Waffen, Puppenteile
+    std::set<std::string> ohneDatei;              // ohne gleichnamige Datei
     g_figurClumps = { clump };
-    const std::vector<std::string> animClumps = x.AnimClumpNames(0);
-    for (const std::string& c : animClumps) {
-        if (c == clump) continue;
+    auto einordnen = [&](const std::string& c, bool ausSammeldatei) {
         const bool eigen = c.compare(0, f.code.size(), f.code) == 0 || c.compare(0, mc.size(), mc) == 0;
-        const bool form = !eigen && IstKoerper(c);
-        if (!eigen && !form) continue;
-        const std::string p = "data/spc/" + c + ".xfbin";
-        if (!d.Gibt(p)) {
-            if (eigen && IstKoerper(c)) fehlend.push_back(c);
-            continue;
-        }
-        if (std::find(modelle.begin(), modelle.end(), p) != modelle.end()) continue;
-        modelle.push_back(p);
-        if (form) {
-            formen.push_back(c.substr(0, 4));
+        if (eigen || !IstKoerper(c)) return;
+        const std::string code = c.substr(0, 4);
+        if (istFormCode(code)) {
+            // Ein zweiter Koerper der Form ohne eigene Datei ist ihr
+            // Doppelgaenger - 2nrvbod2 in 2nrvacc1 neben 2nrvbod1.
+            if (ausSammeldatei && std::any_of(g_figurClumps.begin(), g_figurClumps.end(),
+                                              [&](const std::string& s) { return s != clump && s.compare(0, 4, code) == 0; })) {
+                doppelgaenger.insert(c);
+                return;
+            }
+            formen.push_back(code);
             g_figurClumps.push_back(c);
             Log("  Verwandlung: %s", c.c_str());
+        } else if (istFassungCode(code)) {
+            doppelgaenger.insert(c);
+            Log("  Doppelgaenger aus einer anderen Fassung: %s", c.c_str());
+        } else {
+            begleiter.insert(c);
+            Log("  Begleiter: %s", c.c_str());
         }
+    };
+    for (const std::string& c : x.AnimClumpNames(0)) {
+        if (c == clump || c.find("cmn") != std::string::npos) continue;
+        const bool eigen = c.compare(0, f.code.size(), f.code) == 0 || c.compare(0, mc.size(), mc) == 0;
+        if (istDoppelgaenger(c)) {
+            doppelgaenger.insert(c);
+            if (o.nurOriginal) continue;
+        }
+        const std::string p = "data/spc/" + c + ".xfbin";
+        if (!d.Gibt(p)) {
+            if (!IstEffektName(c)) ohneDatei.insert(c);
+            continue;
+        }
+        if (!eigen && !IstKoerper(c)) continue;   // fremde Teile mit eigener Datei: Sache der Effekte
+        if (std::find(modelle.begin(), modelle.end(), p) != modelle.end()) continue;
+        modelle.push_back(p);
+        einordnen(c, false);
     }
-    // Weitere Koerper der Figur stehen oft in einer Sammeldatei: die
-    // Doppelgaenger in Storm 3 als 2nrtbod2 in 2nrtbod1.xfbin (das
-    // laedt ohnehin mit) und 2nrtbod3 in 2nrtacc2.xfbin. Bis 3.0 wurden
-    // sie als "anderes Kostuem" auf die Figur umgeleitet - und standen
-    // als ganze Narutos neben ihm.
-    if (!fehlend.empty()) {
-        std::set<std::string> offen(fehlend.begin(), fehlend.end());
-        // schon geladene Dateien bringen ihre Clumps mit
-        for (const std::string& m : modelle) {
-            std::vector<uint8_t> b;
-            std::string fe;
-            xfbin::XfbinFile kopf;
-            if (!d.Lies(m, b, fe) || !xfbin::ReadXfbinBuffer(b.data(), b.size(), kopf).ok) continue;
-            for (const xfbin::XfbinPage& pg : kopf.pages)
-                for (const xfbin::XfbinChunk& ch : pg.chunks)
-                    if (ch.type != nullptr && ch.name != nullptr && *ch.type == "nuccChunkClump") offen.erase(*ch.name);
-        }
+
+    // Was keine gleichnamige Datei hat, steht in einer Sammeldatei der
+    // Figur: Narutos Doppelgaenger 2nrtbod3 in 2nrtacc2, Hakus Senbon
+    // in 1hakacc1, Samehada (2smhbod1) in 2ksmacc1, Kankuros Puppen in
+    // 2knkacc1/2, Pains andere Pfade in 2peaacc1-3, Madaras Susanoo in
+    // 3mdracc1. Gesucht wird in den Dateien der Figur, ihrer Formen und
+    // frueheren Fassungen. Erst die Zubehoer- (acc) und Modelldateien;
+    // fehlt dann noch ein Koerper, alle uebrigen Dateien - nur nach
+    // Koerpern, denn sonst stehen darin Effekte, die der Effekt-
+    // Durchlauf holt.
+    if (!ohneDatei.empty()) {
+        for (const std::string& m : modelle)
+            for (const std::string& c : ClumpsIn(d, m)) ohneDatei.erase(c);
+        std::vector<std::string> praefixe = { f.code, mc };
+        for (const std::string& c : formen) praefixe.push_back(c);
+        for (const std::string& c : fassungen) praefixe.push_back(c);
+        std::vector<std::pair<std::string, bool>> dateienDerFigur;   // Pfad, Sammeldatei?
         for (const std::string& p : d.Pfade()) {
-            if (offen.empty()) break;
-            const std::string n = xfbin::DateiName(p);
-            if (p.compare(0, 9, "data/spc/") != 0 || p.find('/', 9) != std::string::npos) continue;
-            if ((n.compare(0, f.code.size(), f.code) != 0 && n.compare(0, mc.size(), mc) != 0) || n.find(".bin") != std::string::npos) continue;
+            if (p.compare(0, 9, "data/spc/") != 0 || p.find('/', 9) != std::string::npos || p.find(".bin") != std::string::npos) continue;
+            const std::string n = OhneEndung(xfbin::DateiName(p));
+            std::string rest;
+            bool passt = false;
+            for (const std::string& pr : praefixe)
+                if (n.size() > pr.size() && n.compare(0, pr.size(), pr) == 0) { passt = true; rest = n.substr(pr.size()); break; }
+            if (!passt || rest.find("_dmg") != std::string::npos || rest.find("_col") != std::string::npos) continue;
             if (std::find(modelle.begin(), modelle.end(), p) != modelle.end()) continue;
-            std::vector<uint8_t> b;
-            std::string fe;
-            xfbin::XfbinFile kopf;
-            if (!d.Lies(p, b, fe) || !xfbin::ReadXfbinBuffer(b.data(), b.size(), kopf).ok) continue;
-            std::vector<std::string> treffer;
-            for (const xfbin::XfbinPage& pg : kopf.pages)
-                for (const xfbin::XfbinChunk& ch : pg.chunks)
-                    if (ch.type != nullptr && ch.name != nullptr && *ch.type == "nuccChunkClump" && offen.count(*ch.name)) treffer.push_back(*ch.name);
-            if (treffer.empty()) continue;
-            for (const std::string& t : treffer) { offen.erase(t); Log("  Koerper %s aus %s", t.c_str(), p.c_str()); }
-            modelle.push_back(p);
-            nurClumps[p] = treffer;
+            dateienDerFigur.push_back({ p, rest.compare(0, 3, "acc") == 0 || IstModellRest(rest) });
+        }
+        for (int durchgang = 0; durchgang < 2; ++durchgang) {
+            for (const auto& pd : dateienDerFigur) {
+                const std::string& p = pd.first;
+                const bool sammel = pd.second;
+                if (ohneDatei.empty()) break;
+                if (sammel != (durchgang == 0)) continue;
+                if (!sammel && std::none_of(ohneDatei.begin(), ohneDatei.end(), [](const std::string& c) { return IstKoerper(c); })) break;
+                std::vector<std::string> bauen;
+                for (const std::string& t : ClumpsIn(d, p)) {
+                    if (!ohneDatei.count(t) || (!sammel && !IstKoerper(t))) continue;
+                    ohneDatei.erase(t);
+                    if (!IstKoerper(t)) zubehoer.insert(t);
+                    else einordnen(t, true);
+                    if (o.nurOriginal && doppelgaenger.count(t)) { Log("  %s aus %s - ausgelassen (original only)", t.c_str(), p.c_str()); continue; }
+                    Log("  %s aus %s", t.c_str(), p.c_str());
+                    bauen.push_back(t);
+                }
+                if (bauen.empty()) continue;
+                modelle.push_back(p);
+                nurClumps[p] = bauen;
+            }
         }
     }
 
+    zeit("Suche");
     std::wstring texOrdner;
     if (o.texturen) {
         texOrdner = Ablage() + L"\\textures\\" + Sauber(xfbin::SpielName(d.Ordner())) + L"\\" + Breit(f.code);
@@ -441,7 +749,69 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
         std::filesystem::create_directories(texOrdner, ec);
     }
 
+    // "Original only": die Figur und ihre Verwandlungen je einmal,
+    // die Doppelgaenger gar nicht - auch nicht aus der Modelldatei
+    // selbst (2nrtbod2 steht in 2nrtbod1.xfbin).
+    // WC3: Doppelgaenger, die nach dem Zusammenlegen niemand mehr nennt,
+    // auch nicht bauen (2nrtbod3, wenn 2nrtbod2 das Rig ist).
+    if (!ungenutzteKlone.empty() && !o.nurOriginal) x.SetClumpSkip(ungenutzteKlone);
+    if (o.nurOriginal) {
+        x.SetClumpSkip(doppelgaenger);
+        x.SetSingleInstance(std::set<std::string>(g_figurClumps.begin(), g_figurClumps.end()));
+        if (!doppelgaenger.empty()) {
+            std::string liste;
+            for (const std::string& c : doppelgaenger) liste += " " + c;
+            Log("  Original only - Doppelgaenger ausgelassen:%s", liste.c_str());
+        }
+    }
+
+    // --- Ebenen: wer ist wer ----------------------------------
+    // Das Original, seine Teile (Augen, Zaehne, Waffen), Verwandlungen,
+    // Begleiter und die Doppelgaenger - ein weiterer Koerper der Figur
+    // (2nrtbod2) oder ein weiteres Exemplar von ihr ("#2"). Die Knoten
+    // entstehen gleich in ihrer Ebene (SetLayerHook).
+    const std::wstring anzeige = Breit(f.name == f.code ? f.code : f.name + " " + f.code);
+    std::set<std::string> effektClumps;
+    auto istForm = [&](const std::string& c) {
+        return c != clump && std::find(g_figurClumps.begin(), g_figurClumps.end(), c) != g_figurClumps.end();
+    };
+    auto istKlon = [&](const std::string& c, int inst) {
+        if (effektClumps.count(c)) return false;
+        if (c == clump || istForm(c)) return inst > 0;
+        return istDoppelgaenger(c) || doppelgaenger.count(c) > 0;   // auch der der Form
+    };
+    std::map<std::pair<std::string, int>, int> klonNr;   // in der Reihenfolge der Szene
+    // "(original)" bekommt die Figur erst am Ende, wenn es Doppelgaenger gibt.
+    auto ebenenName = [&](const std::string& c, int inst, bool bone) {
+        if (effektClumps.count(c)) return anzeige + (bone ? L" - effect bones" : L" - effects");   // alle Effekte zusammen
+        const std::wstring cl = Breit(c);
+        const std::wstring nummer = inst > 0 ? L" #" + std::to_wstring(inst + 1) : std::wstring();
+        std::wstring name;
+        if (istKlon(c, inst)) {
+            auto it = klonNr.find({ c, inst });
+            if (it == klonNr.end()) it = klonNr.emplace(std::make_pair(c, inst), static_cast<int>(klonNr.size()) + 1).first;
+            // "Naruto Uzumaki 2nrt clone 2 (2nrtbod2)"
+            name = anzeige + L" clone " + std::to_wstring(it->second) + L" (" + cl + nummer +
+                   (istForm(c) || istFormCode(c.substr(0, 4)) ? L", form" : L"") + L")";
+        } else if (c == clump) {
+            name = anzeige;
+        } else {
+            name = anzeige + L" " + cl + (istForm(c) ? L" (form)" : begleiter.count(c) ? L" (companion)" : L"") + nummer;
+        }
+        return name + (bone ? L" - bones" : L" - meshes");
+    };
+    std::wstring aktuelleEbene;
+    auto setzeEbene = [&](const std::wstring& n) {
+        if (!o.ebenen || n == aktuelleEbene) return;
+        aktuelleEbene = n;
+        const std::wstring q = L"\"" + SkriptText(n) + L"\"";
+        FuehreSkript(L"(local l = LayerManager.getLayerFromName " + q + L"; if l == undefined do l = LayerManager.newLayerFromName " + q +
+                     L"; if l != undefined do l.current = true; OK)");
+    };
+    x.SetLayerHook([&](const std::string& c, int inst, bool bone) { setzeEbene(ebenenName(c, inst, bone)); });
+
     int knochen = 0, objekte = 0, texturen = 0;
+    std::set<std::string> gebaut;   // Clumps, die aus Modelldateien in der Szene stehen
     for (const std::string& m : modelle) {
         if (!Oeffne(x, d, m, fehler)) {
             if (m == f.modell) { bericht = L"model could not be read: " + fehler; return false; }
@@ -451,6 +821,15 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
         if (nur != nurClumps.end()) x.SetClumpFilter(nur->second);
         const int b = x.BuildSkeletonN(o.knochenModus, o.massstab, 0);
         const int n = x.BuildMeshesN(o.lodWeg ? 1 : 0, o.normalen ? 1 : 0, o.skin ? 1 : 0, o.massstab, 0);
+        for (const std::string& c : x.FileClumpNames()) {
+            if (!x.ClumpWanted(c)) continue;
+            gebaut.insert(c);
+            // Weitere Teile aus Form- und Begleiterdateien - Kankuros
+            // 2scxbod2.xfbin bringt Arme, Draht und Feuer mit, eine Form
+            // ihre Schwaenze: wie Zubehoer, sonst stuenden sie sichtbar
+            // da, waehrend ihr Koerper versteckt ist.
+            if (m != f.modell && c != clump && !IstKoerper(c)) zubehoer.insert(c);
+        }
         if (nur != nurClumps.end()) x.SetClumpFilter({});
         if (m == f.modell && b <= 0) { bericht = L"skeleton could not be built: " + std::wstring(x.GetLastError()); return false; }
         knochen += std::max(0, b);
@@ -463,6 +842,7 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
         Log("  Modell %s: %d Bones, %d Objekte%s%s", m.c_str(), b, n, w.empty() ? "" : " - ", Utf8(w).c_str());
     }
 
+    zeit("Modelle");
     // --- 2b. Effekte -----------------------------------------
     // Die Jutsu- und Ultimate-Animationen bewegen eigene Clumps:
     // Tafeln, Linien, Ringe, Rauch, Doppelgaenger. Sie stehen nicht
@@ -471,7 +851,6 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
     //   data/spc/1nrtspl1_bod1.xfbin     Doppelgaenger der Ultimate
     //   data/effect/1efcmn.xfbin         ueber 300 gemeinsame Effekte
     // Gebaut wird nur, was die eigenen Animationen ansprechen.
-    std::set<std::string> effektClumps;
     int effekte = 0;
     if (o.effekte) {
         std::set<std::string> gesucht(ev.clumps.begin(), ev.clumps.end());
@@ -479,26 +858,55 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
         for (const std::string& c : { clump }) gesucht.erase(c);
         for (const std::string& m : modelle) gesucht.erase(OhneEndung(xfbin::DateiName(m)));
         for (const auto& kv : nurClumps) for (const std::string& c : kv.second) gesucht.erase(c);
+        // Was die Modelldateien schon in die Szene gebracht haben
+        // (2nrtbod2, 2nrteyes, die Schwaenze der Form), ist kein Effekt -
+        // sonst stuende es doppelt da. Und bei "Original only" kommen
+        // die Doppelgaenger auch hier nicht.
+        for (const std::string& c : gebaut) gesucht.erase(c);
+        if (o.nurOriginal) for (const std::string& c : doppelgaenger) gesucht.erase(c);
 
-        const std::string kurz = f.code.substr(1);   // "nrt"
+        // Codes, deren Dateien in Frage kommen: die Figur, ihre Formen
+        // und frueheren Fassungen.
+        std::vector<std::string> codes = { f.code };
+        for (const std::string& c : formen) codes.push_back(c);
+        for (const std::string& c : fassungen) codes.push_back(c);
         std::vector<std::string> kandidaten = ev.dateien;
+        auto dazu = [&](const std::string& p) {
+            if (std::find(kandidaten.begin(), kandidaten.end(), p) == kandidaten.end()) kandidaten.push_back(p);
+        };
+        // Effekt-Bibliotheken ohne den Code im Namen: 2efb_frs00 steht
+        // in data/effect/2efb_frs.xfbin, 4efb_rsn1_00 in 4efb_rsn1.xfbin.
+        // Je gesuchtem Clump zaehlt der laengste Anfang, den es als
+        // Datei gibt.
+        for (const std::string& g : gesucht) {
+            for (size_t n = g.size(); n >= 6; --n) {
+                std::string stamm = g.substr(0, n);
+                while (!stamm.empty() && stamm.back() == '_') stamm.pop_back();
+                if (stamm.size() < 6) break;
+                if (d.Gibt("data/effect/" + stamm + ".xfbin")) { dazu("data/effect/" + stamm + ".xfbin"); break; }
+            }
+        }
         // Manche Ultimates tragen ihre Kulisse selbst: 9nrtspl1.xfbin
         // (Baryon) haelt neben 38 Animationen 99 Effekt-Clumps.
-        for (const std::string& p : f.anims)
-            if (std::find(kandidaten.begin(), kandidaten.end(), p) == kandidaten.end()) kandidaten.push_back(p);
+        for (const std::string& p : animDateien) dazu(p);
         for (const std::string& p : d.Pfade()) {
-            if (std::find(kandidaten.begin(), kandidaten.end(), p) != kandidaten.end()) continue;
             const std::string n = xfbin::DateiName(p);
             const bool spc = p.compare(0, 9, "data/spc/") == 0 && p.find('/', 9) == std::string::npos;
             const bool eff = p.compare(0, 12, "data/effect/") == 0 && p.find('/', 12) == std::string::npos;
-            bool eigenerCode = n.compare(0, f.code.size(), f.code) == 0;
-            for (const std::string& fc : formen) if (n.compare(0, fc.size(), fc) == 0) eigenerCode = true;
+            std::string rest;
+            bool eigenerCode = false;
+            bool kurzImNamen = false;
+            for (const std::string& c : codes) {
+                if (!eigenerCode && n.compare(0, c.size(), c) == 0) { eigenerCode = true; rest = n.substr(c.size()); }
+                if (n.find(c.substr(1)) != std::string::npos) kurzImNamen = true;   // "nrt", "nrv"
+            }
+            // Zubehoerdateien tragen auch Effekte (2nrteff1_10 in 2nrtacc2).
             if (spc && eigenerCode &&
-                (n.find("_bod") != std::string::npos || n.find("eff") != std::string::npos) &&
+                (n.find("_bod") != std::string::npos || n.find("eff") != std::string::npos || rest.compare(0, 3, "acc") == 0) &&
                 n.find("_dmg") == std::string::npos && n.find("_col") == std::string::npos && n.find(".bin") == std::string::npos)
-                kandidaten.push_back(p);
-            else if (eff && (n.find(kurz) != std::string::npos || n.find("efcmn") != std::string::npos))
-                kandidaten.push_back(p);
+                dazu(p);
+            else if (eff && (kurzImNamen || n.find("efcmn") != std::string::npos))
+                dazu(p);
         }
         for (const std::string& p : kandidaten) {
             if (gesucht.empty()) break;
@@ -512,6 +920,9 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
                     if (c.type != nullptr && c.name != nullptr && *c.type == "nuccChunkClump" && gesucht.count(*c.name)) treffer.push_back(*c.name);
             if (treffer.empty()) continue;
             if (x.OpenBuffer(b, Breit(p)) < 0) continue;
+            // vor dem Bauen eintragen - der Ebenen-Haken legt sie dann
+            // gleich in die Effekt-Ebenen
+            for (const std::string& t : treffer) { gesucht.erase(t); effektClumps.insert(t); }
             x.SetClumpFilter(treffer);
             const int eb = x.BuildSkeletonN(o.knochenModus, o.massstab, 0);
             const int en = x.BuildMeshesN(o.lodWeg ? 1 : 0, o.normalen ? 1 : 0, o.skin ? 1 : 0, o.massstab, 0);
@@ -520,7 +931,6 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
                 texturen += x.ExportTextures(texOrdner.c_str());
                 x.BuildMaterials(texOrdner.c_str());
             }
-            for (const std::string& t : treffer) { gesucht.erase(t); effektClumps.insert(t); }
             effekte += static_cast<int>(treffer.size());
             knochen += std::max(0, eb);
             objekte += std::max(0, en);
@@ -533,14 +943,17 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
         }
     }
 
+    zeit("Effekte");
     // --- 2c. Partikel und gestartete Effekte anbinden ---------
     std::vector<ULONG> partikelKnoten;
     if (o.effekte && ev.emitter > 0) {
         std::string elog;
+        setzeEbene(anzeige + L" - particles");
         partikelKnoten = EffekteAnbinden(x, d, texOrdner, o.massstab, effektClumps, elog);
         Log("  Partikel: %zu Emitter, %zu Effekt-Animationen - %s", ev.emitter, ev.animsFx, elog.c_str());
     }
 
+    zeit("Partikel");
     // --- 2d. Texturen aus anderen Dateien --------------------
     // Effekte nehmen ihre Texturen meist aus der gemeinsamen
     // Bibliothek 1efcmn.xfbin (1efc_board01, 1efc_fire07 ...), ein
@@ -554,10 +967,13 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
             std::vector<std::string> kandidaten;
             for (const std::string& p : { "data/effect/" + f.code.substr(0, 1) + "efcmn.xfbin", std::string("data/effect/1efcmn.xfbin"), f.modell })
                 if (d.Gibt(p) && std::find(kandidaten.begin(), kandidaten.end(), p) == kandidaten.end()) kandidaten.push_back(p);
+            std::vector<std::string> codes = { f.code, mc };
+            for (const std::string& c : formen) codes.push_back(c);
+            for (const std::string& c : fassungen) codes.push_back(c);
             for (const std::string& p : d.Pfade()) {
-                const bool spc = p.compare(0, 9, "data/spc/") == 0 && p.find('/', 9) == std::string::npos &&
-                                 (p.compare(9, f.code.size(), f.code) == 0 || p.compare(9, mc.size(), mc) == 0);
-                if (spc && p.find(".bin") == std::string::npos) kandidaten.push_back(p);
+                if (p.compare(0, 9, "data/spc/") != 0 || p.find('/', 9) != std::string::npos || p.find(".bin") != std::string::npos) continue;
+                if (std::any_of(codes.begin(), codes.end(), [&](const std::string& c) { return p.compare(9, c.size(), c) == 0; }))
+                    kandidaten.push_back(p);
             }
             for (const std::string& p : d.Pfade())
                 if (p.compare(0, 12, "data/effect/") == 0 && p.find('/', 12) == std::string::npos) kandidaten.push_back(p);
@@ -595,36 +1011,39 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
         }
     }
 
+    zeit("Texturen");
     // --- 3. Ebenen, Kennzeichnung, Material-Editor ------------
-    const std::wstring anzeige = Breit(f.name == f.code ? f.code : f.name + " " + f.code);
-    std::wistringstream bericht2(x.GetLayerReport());
-    std::map<std::wstring, std::vector<ULONG>> ebenen;
-    std::wstring zeile;
-    while (std::getline(bericht2, zeile)) {
-        std::wistringstream z(zeile);
-        std::wstring cl, inst, art, handle;
-        if (!std::getline(z, cl, L'\t') || !std::getline(z, inst, L'\t') || !std::getline(z, art, L'\t') || !std::getline(z, handle, L'\t')) continue;
-        const ULONG h = static_cast<ULONG>(_wtoi64(handle.c_str()));
-        const bool effekt = effektClumps.count(Utf8(cl)) > 0;
-        std::wstring name;
-        if (effekt) {
-            // Alle Effekte zusammen - sonst waeren es zwei Ebenen je Effekt.
-            name = anzeige + ((art == L"bone") ? L" - effect bones" : L" - effects");
-            // Unsichtbar, bis eine Animation den Effekt zeigt.
-            if (art != L"bone")
-                if (INode* n = ip->GetINodeByHandle(h)) n->SetVisibility(0, 0.0f);
-        } else {
-            const bool form = cl != Breit(clump) &&
-                              std::find(g_figurClumps.begin(), g_figurClumps.end(), Utf8(cl)) != g_figurClumps.end();
-            name = (cl == Breit(clump) ? anzeige : anzeige + L" " + cl + (form ? L" (form)" : L""));
-            if (_wtoi(inst.c_str()) > 0) name += L" #" + std::to_wstring(_wtoi(inst.c_str()) + 1);
-            name += (art == L"bone") ? L" - bones" : L" - meshes";
-            // Die Verwandlung erscheint nur, wenn eine Animation sie zeigt.
-            if (form && art != L"bone")
-                if (INode* n = ip->GetINodeByHandle(h)) n->SetVisibility(0, 0.0f);
+    struct Knoten { std::string clump; int inst; bool bone; ULONG h; };
+    std::vector<Knoten> knotenListe;
+    {
+        std::wistringstream bericht2(x.GetLayerReport());
+        std::wstring zeile;
+        while (std::getline(bericht2, zeile)) {
+            std::wistringstream z(zeile);
+            std::wstring cl, inst, art, handle;
+            if (!std::getline(z, cl, L'\t') || !std::getline(z, inst, L'\t') || !std::getline(z, art, L'\t') || !std::getline(z, handle, L'\t')) continue;
+            knotenListe.push_back({ Utf8(cl), _wtoi(inst.c_str()), art == L"bone", static_cast<ULONG>(_wtoi64(handle.c_str())) });
         }
+    }
+    // Unsichtbar, bis eine Animation sie zeigt: Effekte, Doppelgaenger
+    // (sonst stuenden sie deckungsgleich ueber dem Original) und
+    // Verwandlungen. Alle anderen Teile - Begleiter, Waffen, auch die
+    // aus der Modelldatei - ebenso, ausser die Grundbewegung zeigt sie
+    // (Samehada, Kankuros Puppe); Hakus Senbon, Madaras Susanoo oder
+    // die Falten einer Ultimate (4nrtspl1_wrinkles in 9nrtbod1)
+    // stuenden sonst immer da. Ohne Grundbewegung bleibt alles sichtbar.
+    std::map<std::wstring, std::vector<ULONG>> ebenen;
+    for (const Knoten& k : knotenListe) {
+        const ULONG h = k.h;
+        const bool verstecken = effektClumps.count(k.clump) > 0 || istKlon(k.clump, k.inst) || istForm(k.clump) ||
+                                (k.clump != clump && grundAnims > 0 && !immerDa(k.clump, k.inst));
+        if (verstecken && !k.bone)
+            if (INode* n = ip->GetINodeByHandle(h)) n->SetVisibility(0, 0.0f);
+        std::wstring name = ebenenName(k.clump, k.inst, k.bone);
+        if (k.clump == clump && !istKlon(k.clump, k.inst) && !klonNr.empty())
+            name = anzeige + L" (original)" + (k.bone ? L" - bones" : L" - meshes");
         ebenen[name].push_back(h);
-        if (art == L"bone") {
+        if (k.bone) {
             if (INode* n = ip->GetINodeByHandle(h)) {
                 n->SetUserPropString(_T("xfbin_code"), Breit(f.code).c_str());
                 n->SetUserPropInt(_T("xfbin_kostuem"), f.kostuem);
@@ -633,18 +1052,31 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
         }
     }
     for (ULONG h : partikelKnoten) ebenen[anzeige + L" - particles"].push_back(h);
+    zeit("Kennzeichnung");
     if (o.ebenen && !ebenen.empty()) {
+        // Die Knoten sind schon in ihren Ebenen entstanden; hier kommt
+        // nur nach, was anders heisst - die Ebenen des Originals bekommen
+        // "(original)", wenn es Doppelgaenger gibt - oder was ohne Haken
+        // entstand. Umbenennen ist eine Operation je Ebene; Knoten
+        // einzeln zu verschieben kostet bei offenem Scene Explorer
+        // Millisekunden je Stueck.
         std::wstring sk = L"(\n fn xfL n hs = (\n  local l = LayerManager.getLayerFromName n\n"
                           L"  if l == undefined do l = LayerManager.newLayerFromName n\n"
-                          L"  if l != undefined do for h in hs do (local o = maxOps.getNodeByHandle h; if o != undefined do l.addNode o)\n )\n";
+                          L"  if l != undefined do for h in hs do (local o = maxOps.getNodeByHandle h; if o != undefined and o.layer.name != n do l.addNode o)\n )\n"
+                          L" fn xfU a b = (local l = LayerManager.getLayerFromName a; if l != undefined and (LayerManager.getLayerFromName b) == undefined do l.setname b)\n"
+                          L" theHold.Suspend()\n try (\n";
+        if (!klonNr.empty())
+            for (const wchar_t* art : { L" - bones", L" - meshes" })
+                sk += L" xfU \"" + SkriptText(anzeige + art) + L"\" \"" + SkriptText(anzeige + L" (original)" + art) + L"\"\n";
         for (const auto& kv : ebenen) {
             sk += L" xfL \"" + SkriptText(kv.first) + L"\" #(";
             for (size_t i = 0; i < kv.second.size(); ++i) sk += (i ? L"," : L"") + std::to_wstring(kv.second[i]);
             sk += L")\n";
         }
-        sk += L" OK\n)\n";
+        sk += L" ) catch ()\n theHold.Resume()\n OK\n)\n";
         FuehreSkript(sk);
     }
+    zeit("Ebenen");
     if (o.medit && objekte > 0) {
         FuehreSkript(L"(local aMats = #(); for o in geometry where o.material != undefined and (findItem aMats o.material) == 0 do append aMats o.material;"
                      L" for i = 1 to (amin 24 aMats.count) do setMeditMaterial i aMats[i]; OK)");
@@ -674,13 +1106,21 @@ bool ImportiereFigur(const xfbin::Spieldaten& d, const xfbin::FigurEintrag& f, c
     g_figurDa = true;
     g_effektClumps = effektClumps;
     g_figurOrdner = d.Ordner();
+    zeit("Material-Editor");
     ip->RedrawViews(ip->GetTime());
+    zeit("Anzeige");
 
     const double s = (GetTickCount() - t0) / 1000.0;
-    wchar_t puffer[400];
-    swprintf_s(puffer, L"%ls: %d bones, %d objects, %d textures, %zu animations from %zu files, %d effects, %zu particle emitters (%.1f s).",
-               anzeige.c_str(), knochen, objekte, texturen, animZahl, dateien, effekte, partikelKnoten.size(), s);
+    std::wstring klonText;
+    if (!klonNr.empty())
+        klonText = L", " + std::to_wstring(klonNr.size()) + (klonNr.size() == 1 ? L" clone" : L" clones") + L" (hidden until an animation shows them)";
+    else if (o.nurOriginal && !doppelgaenger.empty())
+        klonText = L", original only (" + std::to_wstring(doppelgaenger.size()) + L" clone model(s) skipped)";
+    wchar_t puffer[600];
+    swprintf_s(puffer, L"%ls: %d bones, %d objects, %d textures, %zu animations from %zu files, %d effects, %zu particle emitters%ls (%.1f s).",
+               anzeige.c_str(), knochen, objekte, texturen, animZahl, dateien, effekte, partikelKnoten.size(), klonText.c_str(), s);
     bericht = puffer;
+    Log("  Zeiten: %s", zeiten.c_str());
     Log("%s", Utf8(bericht).c_str());
     return true;
 }

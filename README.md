@@ -50,12 +50,14 @@ and **[Storm-Engine-NUCC](https://github.com/Al-Hydra/Storm-Engine-NUCC)**
 | **Skinning** | Skin modifier with per-vertex weights |
 | **Textures** | NUT textures written out as DDS and wired into Standard materials |
 | **Own animations only** | Exactly the character's files (`bod1c`, `bod1l`, `skl1`, `spl1`, `awa` …) and only the clips that move its skeleton. Shared hit reactions (`1cmnbod1`) on request |
-| **Effects** | The game's particle system: effect animations started by each attack (Rasengan …), effect models, mesh and sprite particles as WhiteoutDex *Particle 2*, all timed like in the game |
-| **Transformations** | Forms a character turns into during its own animations (Naruto's awakening → `1nrvbod1`) |
-| **Clones** | A skeleton used several times (shadow clones, two weapons) gets one copy per use |
+| **Inherited movesets** | What the character's `prm` file names from other versions and forms: Choji (Great Ninja War) uses 98 moves of `2tyo`, moved onto his own skeleton; Naruto's awakened form brings its 52 moves from `2nrvawa` |
+| **Weapons and companions** | Found in the character's collection files (`acc`): Haku's senbon, Sasuke's sword, Samehada, Kankuro's puppets, Pain's other paths and summons, Madara's Susanoo and fan, Gaara's sand arm |
+| **Effects** | The game's particle system: effect animations started by each attack (Rasengan …), effect models — also from technique libraries such as `2efb_frs.xfbin` — mesh and sprite particles as WhiteoutDex *Particle 2*, all timed like in the game |
+| **Transformations** | Forms a character turns into during its own animations (Naruto's awakening → `1nrvbod1`), labelled `(form)`; puppets, summons and other bodies are `(companion)` |
+| **Clones** | A skeleton used several times at once (shadow clones, two weapons) gets one copy per simultaneous use, in `clone` layers next to the `(original)` |
 | **Material animation** | UV offset, tiling and opacity — sprite flipbooks and UV scrolling |
 | **Timeline** | One clip, or every clip in a row with note track and `NeoDexSequenceData` |
-| **WC3 mode** | One mesh per material, facing −Y, in place, hard effect visibility per sequence |
+| **WC3 mode** | One mesh per material, facing −Y, in place, hard effect visibility per sequence; clones share as few simple clone rigs as the busiest animation needs |
 
 Everything runs in C++. Importing Naruto from Storm 4 with 126 own
 animations, 51 effect models and 34 particle emitters takes about four
@@ -211,7 +213,8 @@ names and codes (`naruto`, `2ssk`, `bod2` for a second costume).
 | **Textures** | on | Writes the DDS files to `%LOCALAPPDATA%\XfbinImport\textures` and builds materials |
 | **Effects** | on | Effect models, started effect animations and particles of the character's jutsu and ultimates |
 | **Reactions** | off | Adds the shared hit, fall and get-up animations every character uses |
-| **Clear scene** | off | Deletes everything before the import |
+| **Clear scene** | off | Deletes everything (and the layers left empty) before the import |
+| **Original only** | off | Just the character with its own parts (eyes, teeth, weapons). Without it, the shadow clones and other doubles its animations use come along — in layers named `clone 1 (2nrtbod2)` …, hidden until an animation shows them, while the character's layer says `(original)` |
 | **WC3 mode** | off | Prepares the scene for WhiteoutDex — see below |
 | **Color 1…5** | 1 | Color variant. Many textures hold several versions of the same image — the alternative colors you can pick in the game (Baryon Mode Naruto: 1 = yellow chakra glow, 2 = skin tone). Where a texture has fewer, its last one is used. |
 
@@ -266,6 +269,11 @@ works without fixing it by hand:
 - **Effects on/off** — step keys from opacity, scale and the particle
   timelines, with a key at every sequence start and end; frame 0 shows
   no effect.
+- **Few clone rigs** — every animation puts its clones on the first free
+  rig of the simple clone model, so there are only as many rigs as one
+  animation shows at once (Naruto: two instead of three clone skeletons).
+  A full-detail clone moves onto the simple model; bones that model lacks
+  are dropped.
 - Every skinned vertex has a weight, nothing exported is hidden.
 
 Without WC3 mode the character travels, and effects fade, scale and

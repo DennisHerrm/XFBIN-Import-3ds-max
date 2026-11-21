@@ -54,6 +54,7 @@ struct Fenster {
     bool reaktionen = false;
     int  farbe = 0;          // Farbvariante, 0 = Standard
     bool leeren = false;
+    bool original = false;   // nur das Original, ohne Schattendoppelgaenger
     bool importiert = false;
     std::wstring status;
     bool statusFehler = false;
@@ -125,6 +126,7 @@ void MerkeAnker(Fenster& f) {
         { IDC_STATUS, kL | kO | kR },
         { IDC_TAB0, kL | kO }, { IDC_TAB0 + 1, kL | kO }, { IDC_TAB0 + 2, kL | kO },
         { IDC_TEXTUREN, kO | kR }, { IDC_EFFEKTE, kO | kR }, { IDC_REAKTIONEN, kO | kR }, { IDC_LEEREN, kO | kR }, { IDC_WC3, kO | kR }, { IDC_FARBE, kO | kR },
+        { IDC_ORIGINAL, kO | kR },
         { IDC_SUCHE_LABEL, kL | kO }, { IDC_SUCHE, kL | kO | kR }, { IDC_ANZAHL, kO | kR },
         { IDC_LISTE, kL | kO | kR | kU }, { IDC_DETAIL, kL | kR | kU }, { IDC_FUSS, kL | kR | kU },
         { IDC_ANIMFENSTER, kR | kU }, { IDOK, kR | kU }, { IDCANCEL, kR | kU },
@@ -363,6 +365,7 @@ void Importiere(Fenster& f) {
     o.wc3 = f.wc3;
     o.reaktionen = f.reaktionen;
     o.leeren = f.leeren;
+    o.nurOriginal = f.original;
     o.farbe = f.farbe;
     Status(f, L"Importing " + Anzeigename(fe) + L"...");
     HCURSOR alt = SetCursor(LoadCursor(nullptr, IDC_WAIT));
@@ -402,7 +405,8 @@ void Einrichten(Fenster& f) {
     f.wc3 = LiesEinstellung(L"WC3") == L"1";
     f.reaktionen = LiesEinstellung(L"Reaktionen") == L"1";
     f.leeren = LiesEinstellung(L"Leeren") == L"1";
-    f.farbe = std::clamp(_wtoi(LiesEinstellung(L"Farbe").c_str()), 0, kFarben - 1);
+    f.original = LiesEinstellung(L"NurOriginal") == L"1";
+    f.farbe =std::clamp(_wtoi(LiesEinstellung(L"Farbe").c_str()), 0, kFarben - 1);
     SetDlgItemTextW(f.h, IDC_FARBE, (L"Color " + std::to_wstring(f.farbe + 1)).c_str());
     f.spiele = xfbin::FindeSpiele();
     f.ordner = StartOrdner();
@@ -460,7 +464,7 @@ INT_PTR Verarbeite(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             const int id = static_cast<int>(d->CtlID);
             const bool betont = (id >= IDC_TAB0 && id < IDC_TAB0 + kReiterZahl && id - IDC_TAB0 == f->reiter) ||
                                 (id == IDC_TEXTUREN && f->texturen) || (id == IDC_EFFEKTE && f->effekte) || (id == IDC_WC3 && f->wc3) ||
-                                (id == IDC_REAKTIONEN && f->reaktionen) ||
+                                (id == IDC_REAKTIONEN && f->reaktionen) || (id == IDC_ORIGINAL && f->original) ||
                                 (id == IDC_LEEREN && f->leeren) || (id == IDC_FARBE && f->farbe > 0) || id == IDOK;
             xfui::ZeichneKnopf(f->pal, f->fontNormal, *d, betont);
         }
@@ -558,6 +562,13 @@ INT_PTR Verarbeite(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
                 umschalten(f->reaktionen, L"Reaktionen", IDC_REAKTIONEN);
                 Status(*f, f->reaktionen ? L"Shared reactions on: the hit, fall and get-up animations every character uses are added (group \"Reactions\")."
                                          : L"Shared reactions off: only the character's own animations are loaded.");
+            }
+            return TRUE;
+        case IDC_ORIGINAL:
+            if (code == BN_CLICKED) {
+                umschalten(f->original, L"NurOriginal", IDC_ORIGINAL);
+                Status(*f, f->original ? L"Original only on: just the character with its own parts (eyes, teeth, weapons) - no shadow clones or other doubles."
+                                       : L"Original only off: the clones the animations use come along, in their own \"clone\" layers and hidden until an animation shows them.");
             }
             return TRUE;
         case IDC_LEEREN:

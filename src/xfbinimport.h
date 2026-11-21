@@ -147,6 +147,7 @@
 #include "xfbin_tex.h"
 
 #include <array>
+#include <functional>
 #include <memory>
 #include <cctype>
 #include <map>
@@ -497,7 +498,8 @@ public:
     int ShowAnimDialog();
     // folder "" = zuletzt benutztes Spiel. flags: 1 Texturen,
     // 2 geteilte Reaktionen, 4 Szene leeren, 8 WC3-Modus,
-    // 16 ohne Effekte. Liefert den Bericht,
+    // 16 ohne Effekte, 32 nur das Original (ohne Doppelgaenger),
+    // Bits 8-11 Farbvariante. Liefert den Bericht,
     // bei Fehlern mit "ERROR: " davor.
     const MCHAR* ImportCharacter(const MCHAR* folder, const MCHAR* code, int costume, int flags);
     const MCHAR* ApplyAnimation(int index, int wc3);
@@ -522,6 +524,13 @@ public:
     void RetargetAnims(size_t from, const std::string& fromClump, const std::string& toClump,
                        const std::string& fromPrefix, const std::string& toPrefix,
                        bool onlyIfAbsent = false, const std::string& bonePrefix = std::string());
+
+    // EINE Clump-Referenz einer Animation umhaengen, samt ihren
+    // Eintraegen und dem Knochen-Praefix - fuer die WC3-Klon-Rigs, wo
+    // die erste Referenz der Figur das Original bleibt und erst die
+    // zweite auf ein Klon-Rig wandert.
+    void RetargetRef(size_t anim, size_t ref, const std::string& toClump,
+                     const std::string& fromPrefix, const std::string& toPrefix);
 
     // Animationen ab 'from' verwerfen, die keinen Bone von 'clump'
     // bewegen - etwa die Opferanimation in einer Jutsu-Datei, die
@@ -550,7 +559,28 @@ public:
     // data/effect/1efcmn.xfbin enthalten ueber 300 Effekte; eine
     // Figur braucht davon eine Handvoll.
     void SetClumpFilter(const std::vector<std::string>& names) { clumpFilter_.clear(); clumpFilter_.insert(names.begin(), names.end()); }
-    bool ClumpWanted(const std::string& name) const { return clumpFilter_.empty() || clumpFilter_.count(name) > 0; }
+    // Diese Clumps nie bauen, auch wenn die Datei sie enthaelt -
+    // die Doppelgaenger der Figur bei "Original only".
+    void SetClumpSkip(const std::set<std::string>& names) { clumpSkip_ = names; }
+    bool ClumpWanted(const std::string& name) const {
+        return (clumpFilter_.empty() || clumpFilter_.count(name) > 0) && clumpSkip_.count(name) == 0;
+    }
+    // Diese Clumps nur einmal anlegen, wie oft eine Animation sie
+    // auch nennt - die Figur ohne ihre Schattendoppelgaenger.
+    void SetSingleInstance(const std::set<std::string>& names) { singleInstance_ = names; }
+    // Wird gerufen, bevor die Bones oder Meshes eines Clump-Exemplars
+    // entstehen - die Ablage setzt dort die Ebene, in der sie
+    // entstehen sollen. Knoten nachtraeglich in Ebenen zu schieben
+    // kostet bei offenem Scene Explorer einige Millisekunden je Knoten
+    // (Naruto mit Form und Effekten: 14 Sekunden).
+    void SetLayerHook(std::function<void(const std::string& clump, int instance, bool bone)> f) { layerHook_ = std::move(f); }
+    // Clump-Namen der geoeffneten Datei (gelesen, sobald das Skelett
+    // gebaut ist).
+    std::vector<std::string> FileClumpNames() const {
+        std::vector<std::string> v;
+        for (const xfbin::Clump& c : clumps_) v.push_back(c.name);
+        return v;
+    }
 
     // Clump-Namen, die die Animationen ab 'from' ansprechen.
     std::vector<std::string> AnimClumpNames(size_t from) const;
@@ -630,6 +660,9 @@ private:
     bool splitByMaterial_ = false;
     std::set<std::string> inPlaceClumps_;   // die Figur und ihre Verwandlungen
     std::set<std::string> clumpFilter_;
+    std::set<std::string> clumpSkip_;        // nie bauen (SetClumpSkip)
+    std::set<std::string> singleInstance_;   // nur ein Exemplar (SetSingleInstance)
+    std::function<void(const std::string&, int, bool)> layerHook_;   // SetLayerHook
 
     // Gemeinsamer Teil von Open und OpenBuffer.
     int AdoptFile(std::unique_ptr<xfbin::XfbinFile> parsed, const xfbin::ReadResult& r,

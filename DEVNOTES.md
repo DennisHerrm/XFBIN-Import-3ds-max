@@ -117,6 +117,30 @@ das Plugin nicht.
 Fuer den vollstaendigen Durchgang `tools\DIAGNOSE.ms` ins Viewport
 ziehen — Paketordner, Max-Version und Menueweg, DLU, Makro, Menue.
 
+### Figuren per Skript pruefen
+
+Derselbe Import wie im Fenster, ohne Fenster - gut fuer Reihentests:
+
+```maxscript
+XfbinCpp.importCharacter "" "2nrt" 1 (1+2+4)      -- Texturen, Reaktionen, Szene leeren
+XfbinCpp.importCharacter "" "2nrt" 1 (1+2+4+32)   -- dazu "Original only"
+XfbinCpp.importCharacter "" "3tyo" 1 (1+4+16)     -- ohne Effekte
+XfbinCpp.applySequence 10 0
+```
+
+Flags: 1 Texturen, 2 Reaktionen, 4 Szene leeren, 8 WC3, 16 ohne
+Effekte, 32 nur das Original, Bits 8-11 Farbvariante. `import.log`
+nennt je Figur, was woher kam ("Fassung 2tyo: 98 Animationen",
+"1haksbn1 aus data/spc/1hakacc1.xfbin", "Begleiter: 2smhbod1") und die
+Zeit je Abschnitt. `import.log` ist gesperrt, solange Max laeuft;
+`verlauf.log` daneben nicht.
+
+Stolperstein: Knoten nachtraeglich in eine Ebene zu schieben
+(`layer.addNode`) kostet bei offenem Scene Explorer Millisekunden je
+Knoten. Darum entstehen sie ueber `SetLayerHook` gleich in ihrer Ebene.
+Steht "Ebenen" in den Zeiten wieder bei mehreren Sekunden, entsteht
+etwas ohne den Haken.
+
 ### Wenn du lieber ein Skript startest
 
 `scripts\XFBIN_Import.ms` per Drag&Drop ins Viewport ziehen oder ueber

@@ -42,6 +42,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -130,6 +131,21 @@ std::string ClumpName(const FigurEintrag& f);
 
 // Gruppe einer Animationsdatei fuer die Anzeige ("Basic", "Combos" ...).
 std::string AnimGruppe(const FigurEintrag& f, const std::string& pfad);
+
+// Bewegungen anderer Codes, die die prm-Datei einer Figur nennt
+// (data/spc/<code>prm.bin.xfbin):
+//   * eine fruehere Fassung derselben Figur - gleiche Buchstaben,
+//     andere Ziffer: Choji 3tyo hat nur 3tyoawa und nutzt 161
+//     Bewegungen von 2tyo. Deren Skelett wird umgehaengt.
+//   * eine Form - gleiche Ziffer, letzter Buchstabe anders: Narutos
+//     Fuchsmantel 2nrv mit 2nrvawa.xfbin (56 Animationen).
+struct Bewegungsquelle {
+    std::string code;                  // "2tyo"
+    bool form = false;
+    std::set<std::string> namen;       // die genannten Bewegungen
+    std::vector<std::string> dateien;  // Animationsdateien dieses Codes
+};
+std::vector<Bewegungsquelle> PrmBewegungen(const Spieldaten& daten, const FigurEintrag& f);
 
 std::string Klein(std::string s);
 std::string DateiName(const std::string& pfad);

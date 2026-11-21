@@ -597,6 +597,57 @@ std::string AnimGruppe(const FigurEintrag& f, const std::string& pfad) {
 
 std::map<std::string, std::string> SpielNamenLesen(const Spieldaten& daten) { return LeseSpielNamen(daten).name; }
 
+std::vector<Bewegungsquelle> PrmBewegungen(const Spieldaten& daten, const FigurEintrag& f) {
+    std::vector<Bewegungsquelle> aus;
+    std::vector<uint8_t> b;
+    std::string fehler;
+    if (f.code.size() != 4 || !daten.Lies("data/spc/" + f.code + "prm.bin.xfbin", b, fehler)) return aus;
+    const std::string mc = ClumpName(f).substr(0, 4);
+
+    // Die prm-Datei ist binaer; die Bewegungen stehen als Namen darin
+    // ("2tyoskl1_n", "2nrvawa0atk"). Genommen werden Woerter aus
+    // Kleinbuchstaben, Ziffern und "_", die mit einem verwandten Code
+    // beginnen. Was davon keine Animation ist ("2tyo00t0"), faellt
+    // spaeter beim Abgleich mit den Dateien heraus.
+    std::map<std::string, Bewegungsquelle> quellen;
+    std::string wort;
+    auto nimm = [&]() {
+        if (wort.size() >= 7 && std::isdigit(static_cast<unsigned char>(wort[0]))) {
+            const std::string c = wort.substr(0, 4);
+            if (IstCode(c) && c.find("cmn") == std::string::npos && c != f.code && c != mc) {
+                for (const std::string& basis : { f.code, mc }) {
+                    const bool fassung = c[0] != basis[0] && c.compare(1, 3, basis, 1, 3) == 0;
+                    const bool form = c[0] == basis[0] && c.compare(1, 2, basis, 1, 2) == 0 && c[3] != basis[3];
+                    if (!fassung && !form) continue;
+                    Bewegungsquelle& q = quellen[c];
+                    q.code = c;
+                    q.form = form;
+                    q.namen.insert(wort);
+                    break;
+                }
+            }
+        }
+        wort.clear();
+    };
+    for (uint8_t ch : b) {
+        if ((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_') wort += static_cast<char>(ch);
+        else nimm();
+    }
+    nimm();
+    if (quellen.empty()) return aus;
+
+    for (const std::string& p : daten.Pfade()) {
+        if (!BeginntMit(p, "data/spc/") || p.find('/', 9) != std::string::npos || !EndetMit(p, ".xfbin")) continue;
+        const std::string n = p.substr(9, p.size() - 9 - 6);
+        if (n.size() < 5) continue;
+        const auto it = quellen.find(n.substr(0, 4));
+        if (it != quellen.end() && EigeneAnimDatei(n.substr(4), 1)) it->second.dateien.push_back(p);
+    }
+    for (auto& kv : quellen)
+        if (!kv.second.dateien.empty()) aus.push_back(std::move(kv.second));
+    return aus;
+}
+
 Katalog BaueKatalog(const Spieldaten& daten) {
     Katalog k;
     const std::vector<std::string> pfade = daten.Pfade();

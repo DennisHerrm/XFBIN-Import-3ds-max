@@ -881,6 +881,7 @@ int XfbinImportInterface::BuildSkeletonN(int mode, float scale, int copies) {
             }
         }
         if (slot == SIZE_MAX) continue;
+        if (layerHook_) layerHook_(clump.name, copy, true);
 
         // Ab der zweiten Instanz einen Zusatz an den Namen, damit
         // man sie im Szenenbaum auseinanderhalten kann.
@@ -1520,9 +1521,10 @@ int XfbinImportInterface::BuildMeshesN(int skipLod, int explicitNormals,
         // Bei automatischer Zaehlung laeuft die Schleife bis zur
         // groessten vorkommenden Instanzzahl - die meisten Clumps
         // brauchen weniger.
-        // Modelle ausgefilterter Clumps (siehe SetClumpFilter) - und
-        // bei aktivem Filter auch solche ohne Clump - nicht bauen.
-        if (!clumpFilter_.empty() && (clump == nullptr || !ClumpWanted(clump->name))) continue;
+        // Modelle ausgefilterter oder ausgelassener Clumps (siehe
+        // SetClumpFilter, SetClumpSkip) - und bei aktivem Filter auch
+        // solche ohne Clump - nicht bauen.
+        if (clump != nullptr ? !ClumpWanted(clump->name) : !clumpFilter_.empty()) continue;
 
         if (copies <= 0 && clump != nullptr) {
             bool exists = false;
@@ -1535,6 +1537,7 @@ int XfbinImportInterface::BuildMeshesN(int skipLod, int explicitNormals,
             }
             if (!exists) continue;
         }
+        if (layerHook_ && clump != nullptr) layerHook_(clump->name, copy, false);
 
         // ------------------------------------------------------
         //  WC3: ein Mesh je Material
@@ -1914,6 +1917,25 @@ void XfbinImportInterface::RetargetAnims(size_t from, const std::string& fromClu
             e.clumpName = toClump;
             bone(e.targetName);
         }
+    }
+}
+
+void XfbinImportInterface::RetargetRef(size_t anim, size_t ref, const std::string& toClump,
+                                       const std::string& fromPrefix, const std::string& toPrefix) {
+    if (anim >= anims_.size() || ref >= anims_[anim].clumps.size()) return;
+    xfbin::Anm& a = anims_[anim];
+    auto bone = [&](std::string& n) {
+        if (!fromPrefix.empty() && n.compare(0, fromPrefix.size(), fromPrefix) == 0)
+            n = toPrefix + n.substr(fromPrefix.size());
+    };
+    xfbin::AnmClumpRef& c = a.clumps[ref];
+    c.clumpName = toClump;
+    c.modelsKnown = false;
+    for (std::string& b : c.boneNames) bone(b);
+    for (xfbin::AnmEntry& e : a.entries) {
+        if (e.clumpIndex != static_cast<int>(ref)) continue;
+        e.clumpName = toClump;
+        bone(e.targetName);
     }
 }
 
@@ -2526,11 +2548,11 @@ bool XfbinImportInterface::ResolveEntryTarget(const xfbin::Anm& anm,
             break;
         }
     }
-    if (clumpSlot == SIZE_MAX) {
-        for (size_t ci = 0; ci < sceneClumps_.size(); ++ci) {
-            if (sceneClumps_[ci].name == entry.clumpName) { clumpSlot = ci; break; }
-        }
-    }
+    // Fehlt dieses Exemplar, bleibt der Eintrag liegen. Bis 3.0
+    // sprang hier das erste ein - und bekam die Keys des
+    // Doppelgaengers. Exemplare fehlen jetzt mit Absicht: Referenzen
+    // ohne Modell bekommen keins (RequiredInstancesRaw), und
+    // "Original only" laesst die Schattendoppelgaenger weg.
     if (clumpSlot == SIZE_MAX &&
         sceneClumps_.size() == 1 && anm.clumps.size() == 1) {
         clumpSlot = 0;
@@ -2997,10 +3019,16 @@ int XfbinImportInterface::BuildVisibility(int index, float startFrame,
         // Modell (nur der Fuehrungsknochen), sonst abwechselnd mit
         // "_a01" oder "_b01". Wer alle Modelle zeigt, hat doppelt
         // so viele Speedlines und eine, die nie verschwindet.
+        //
+        // Eine Referenz ganz ohne Modell zeigt nichts - auch nach dem
+        // Umhaengen, wenn die Namen nichts mehr sagen: die geteilte
+        // Reaktion 1cmncol1fe liess sonst einen zweiten Naruto die
+        // ganze Sequenz ueber neben dem ersten stehen.
         bool fremd = present.find(m.clumpName) == present.end() || (refIndex < 0 && m.instance > 0);
-        if (!fremd && refIndex >= 0 && !m.modelName.empty() && anm.clumps[static_cast<size_t>(refIndex)].modelsKnown) {
-            const std::vector<xfbin::RawString>& mn = anm.clumps[static_cast<size_t>(refIndex)].modelNames;
-            fremd = std::find(mn.begin(), mn.end(), m.modelName) == mn.end();
+        if (!fremd && refIndex >= 0 && !m.modelName.empty()) {
+            const xfbin::AnmClumpRef& ref = anm.clumps[static_cast<size_t>(refIndex)];
+            if (ref.modelNames.empty()) fremd = true;
+            else if (ref.modelsKnown) fremd = std::find(ref.modelNames.begin(), ref.modelNames.end(), m.modelName) == ref.modelNames.end();
         }
         if (fremd) {
             AppendVisKey(ik, t0, 0.0f);
@@ -3347,17 +3375,29 @@ const MCHAR* XfbinImportInterface::GetFileClumpName() {
 // Ohne Umweg ueber MCHAR - so kann buildSkeletonN die Zahl je
 // Clump selbst bestimmen, statt sie von aussen gereicht zu
 // bekommen.
+//
+// Gezaehlt wird nur bis zur letzten Referenz, die Modelle zeigt.
+// Die geteilte Reaktion 1cmncol1fe nennt 1cmnbod1 neunmal: einmal
+// mit dem Koerper, achtmal ohne Modell mit je einem Hilfsknochen
+// ("dcl spine lf nub"). Auf die Figur umgehaengt ergab das bis 3.0
+// acht volle Kopien von Naruto, deckungsgleich ueber dem Original.
+// Zeigt keine Referenz ein Modell (die Dummys "1efc_dmy01"), zaehlt
+// jede.
 int XfbinImportInterface::RequiredInstancesRaw(const std::string& want) {
     if (want.empty()) return 1;
     if (anims_.empty()) return 1;
+    if (singleInstance_.count(want) > 0) return 1;
 
     int best = 1;
     for (const xfbin::Anm& a : anims_) {
-        int n = 0;
+        int n = 0, bisModell = 0;
         for (const xfbin::AnmClumpRef& c : a.clumps) {
-            if (c.clumpName == want) ++n;
+            if (c.clumpName != want) continue;
+            ++n;
+            if (!c.modelNames.empty()) bisModell = n;
         }
-        if (n > best) best = n;
+        const int brauch = (bisModell > 0) ? bisModell : n;
+        if (brauch > best) best = brauch;
     }
     return best;
 }
@@ -3616,7 +3656,8 @@ const MCHAR* XfbinImportInterface::ImportCharacter(const MCHAR* folder, const MC
         o.leeren = (flags & 4) != 0;
         o.wc3 = (flags & 8) != 0;
         o.effekte = (flags & 16) == 0;
-        o.farbe = (flags >> 8) & 0xF;   // Farbvariante in Bits 8-11
+        o.nurOriginal = (flags & 32) != 0;
+        o.farbe =(flags >> 8) & 0xF;   // Farbvariante in Bits 8-11
         std::wstring bericht;
         const bool ok = xfi::ImportiereFigur(*daten, f, o, bericht);
         scratch_ = (ok ? L"" : L"ERROR: ") + bericht;

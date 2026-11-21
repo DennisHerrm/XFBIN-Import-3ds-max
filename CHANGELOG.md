@@ -2,6 +2,88 @@
 
 ## Unveroeffentlicht
 
+### Original und Schattendoppelgaenger
+- Die geteilte Reaktion `1cmncol1fe` nennt `1cmnbod1` neunmal: einmal mit
+  dem Koerper, achtmal ohne Modell mit je einem Hilfsknochen ("dcl spine
+  lf nub"). Auf die Figur umgehaengt ergab das acht volle Kopien
+  (`#2` bis `#9`), deckungsgleich ueber dem Original - sie sahen aus wie
+  LOD-Stufen mit eigenem Skelett. Gezaehlt wird jetzt nur bis zur letzten
+  Referenz, die ein Modell zeigt. Connections-Naruto mit Reaktionen:
+  2538 Bones vorher, 837 jetzt.
+- Fehlt ein Exemplar, bekommt das erste nicht mehr dessen Keys; eine
+  Referenz ohne Modell zeigt auch nach dem Umhaengen nichts.
+- Die Ebenen sagen, wer wer ist: `Naruto Uzumaki 2nrt (original)`,
+  `... clone 1 (2nrtbod1 #2)`, `... clone 2 (2nrtbod2)` - weitere Koerper
+  der Figur und weitere Exemplare von ihr. Die Doppelgaenger sind wie
+  die Verwandlungen unsichtbar, bis eine Animation sie zeigt.
+- Neuer Schalter "Original only": nur die Figur mit ihren Teilen
+  (Augen, Zaehne, Waffen), ohne Doppelgaenger. `importCharacter`: Flag 32.
+- "Clear scene" loescht auch die Ebenen, die dabei leer werden.
+- Was die Modelldateien schon in die Szene gebracht haben (`2nrtbod2`,
+  `2nrteyes`, die Schwaenze einer Form), sucht der Effekt-Durchlauf nicht
+  noch einmal.
+- Auch Doppelgaenger einer Form (`2nrvbod2` neben `2nrvbod1`) und
+  Schattendoppelgaenger einer frueheren Fassung (Hokage-Naruto benutzt
+  `2nrtbod2`) heissen "clone".
+
+### WC3: Doppelgaenger auf wenigen Klon-Rigs
+- Im WC3-Modus legt jede Animation ihre Doppelgaenger der Reihe nach auf
+  das erste freie Rig des einfachen Klon-Modells - auch den vollen
+  zweiten Naruto (`2nrtbod1 #2`), den nur `2nrtskl1_atk2` zeigt, und
+  Klon-Koerper anderer Fassungen. Es gibt nur so viele Rigs, wie eine
+  Animation gleichzeitig zeigt; was das einfache Modell nicht hat
+  (Gesichtsknochen), faellt weg. Doppelgaenger einer Form bleiben.
+- Naruto `2nrt`: 3 statt 4 Klone, 998 statt 1241 Bones. Hokage-Naruto
+  `7nrt`: 5 statt 6, 1524 statt 1697 Bones. Naruto `5nrt`: 11 statt 15,
+  3429 statt 4317 Bones. Naruto Teil 1 `1nrt`: weiter 4 (eine Animation
+  zeigt vier gleichzeitig), aber alle einfach - 664 statt 980 Bones.
+
+### Waffen und Begleiter aus den Sammeldateien
+- Spricht eine Animation einen Clump ohne gleichnamige Datei an, wird er in
+  den Dateien der Figur, ihrer Formen und frueheren Fassungen gesucht -
+  zuerst in den Zubehoer- (`acc`) und Modelldateien. Bisher galt das nur
+  fuer eigene Koerper. Neu dabei: Hakus Senbon (`1hakacc1`), Sasukes
+  Schwert, Samehada (`2ksmacc1`), Kankuros Puppen (`2knkacc1/2`), Pains
+  fuenf andere Pfade und Beschwoerungen (`2peaacc1-3`), Madaras Susanoo
+  und Faecher (`3mdracc1-3`), Gaaras Sandarm, Kawakis Stacheln, das
+  Zubehoer der Formen (`2nrvacc1`, `3tyvacc1`).
+- Ein fremder Koerper heisst "(form)" nur noch, wenn er eine Form der
+  Figur ist (gleiche Ziffer, anderer letzter Buchstabe, und die prm-Datei
+  nennt ihre Bewegungen oder der Code endet auf "v"). Puppen,
+  Beschwoerungen, Pains Pfade, Samehada und Kurama heissen
+  "(companion)".
+- Sichtbar in der Ruhepose ist ein Teil nur, wenn die Grundbewegung es
+  meistens zeigt - je Exemplar gezaehlt: Kisame traegt ein Samehada, Haku
+  zwei Senbon; Susanoo, Puppen ausserhalb der Grundbewegung, Augen- und
+  Zahn-Clumps fuer Nahaufnahmen und die Falten einer Ultimate erscheinen
+  erst, wenn eine Animation sie zeigt.
+
+### Geerbte Bewegungen
+- Die prm-Datei (`<code>prm.bin.xfbin`) nennt, welche Bewegungen eine
+  Figur benutzt. Neu geladen werden die anderer Fassungen und der Form:
+  Choji (Great Ninja War, `3tyo`) 98 Bewegungen von `2tyo` und 46 seiner
+  Form `3tyv`, Gaara `3gar` 122 von `2gar`, Guy `3guy` 116 von `2guy`,
+  Hinata (THE LAST) 81 von `2hnt`, Naruto `5nrt` 42 von `4nrt`, Narutos
+  Fuchsmantel 52 aus `2nrvawa`, Kisames Haiform 51, Sasukes Form 53.
+- Koerper einer anderen Fassung werden auf die eigenen umgehaengt -
+  `2tyobod1` auf `3tyobod1`, `2tyvbod1` auf `3tyvbod1`. Bisher stand der
+  Basiskoerper als zweite ganze Figur "(form)" daneben.
+
+### Effekt-Bibliotheken
+- Effekte, deren Datei den Code der Figur nicht im Namen traegt, werden
+  ueber den Anfang des Clump-Namens gefunden: `2efb_frs00` in
+  `data/effect/2efb_frs.xfbin`, `4efb_rsn1_00` in `4efb_rsn1.xfbin`. Bei
+  Connections-Naruto kommen so 55 Effekt-Clumps dazu (Rasen-Shuriken,
+  Rasengan). Die Zubehoerdateien der Figur sind ebenfalls Quelle.
+
+### Schneller bei offenem Scene Explorer
+- Die Knoten entstehen gleich in ihrer Ebene, statt danach einzeln
+  verschoben zu werden. Bei offenem Layer Explorer kostete jedes
+  Verschieben Millisekunden: Naruto mit Form und Effekten importiert jetzt
+  in 6 statt 20 Sekunden, der Ebenen-Abschnitt dauert 0,1 statt 13,6
+  Sekunden. Danach ist wieder die vorher aktuelle Ebene aktiv.
+- Das Protokoll nennt die Zeit je Abschnitt ("Zeiten: ...").
+
 ### Alle Fassungen einer Figur, mit den Namen aus dem Spiel
 - Storm 3, Storm 4 und Connections bringen ihre Figurenauswahl mit:
   `playerSettingParam.bin` nennt jede waehlbare Fassung ("9nrt00") mit
