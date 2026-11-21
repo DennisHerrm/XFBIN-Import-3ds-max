@@ -1,6 +1,6 @@
 # Changelog
 
-## Unveroeffentlicht
+## 3.1.0 - Original und Klone, Waffen und Begleiter, geerbte Bewegungen
 
 ### Original und Schattendoppelgaenger
 - Die geteilte Reaktion `1cmncol1fe` nennt `1cmnbod1` neunmal: einmal mit

@@ -1,7 +1,7 @@
 /*
     XFBIN Import  --  Starter
     =========================
-    Version 3.0.0
+    Version 3.1.0
 
     Diese Datei brauchst du im Normalfall NICHT - nach der
     Installation steht das Werkzeug im Menue:

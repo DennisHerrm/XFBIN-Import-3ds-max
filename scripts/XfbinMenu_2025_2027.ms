@@ -1,7 +1,7 @@
 -- ============================================================
 --  XfbinMenu_2025_2027.ms
 --  Menueeintraege fuer 3ds Max 2025 und neuer
---  Version 3.0.0
+--  Version 3.1.0
 --
 --  Ab 2025 ist das alte menuMan-API abgeloest. Menues werden
 --  ueber einen Callback registriert, den der neue

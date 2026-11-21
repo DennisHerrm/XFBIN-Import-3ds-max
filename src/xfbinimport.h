@@ -169,7 +169,7 @@
 #define XFBINIMPORT_SCENE_CLASS_ID Class_ID(0x5d3a71e4, 0x2c86f019)
 #define XFBINIMPORT_INTERFACE_ID Interface_ID(0x2C614F13, 0x5A0D7B23)
 
-#define XFBINIMPORT_VERSION_STR  _T("3.0.0")
+#define XFBINIMPORT_VERSION_STR  _T("3.1.0")
 
 // ============================================================
 //  Function IDs

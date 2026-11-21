@@ -1,6 +1,6 @@
 -- ============================================================
 --  XfbinImport.mcr - Menue "Ninja Storm Importer"
---  Version 3.0.0
+--  Version 3.1.0
 --
 --  Seit 3.0 sind beide Fenster C++ (XfbinImport.dlu). Diese Datei
 --  oeffnet sie nur noch:
